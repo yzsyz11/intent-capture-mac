@@ -10,8 +10,8 @@ final class RegionSelectionWindow: NSWindow {
     var onPoint: ((CGPoint) -> Void)?
     var onCancel: (() -> Void)?
 
-    init(mode: Mode) {
-        let frame = NSScreen.screens.reduce(CGRect.null) { $0.union($1.frame) }
+    init(screen: NSScreen, mode: Mode) {
+        let frame = screen.frame
         let view = RegionSelectionView(frame: CGRect(origin: .zero, size: frame.size), mode: mode)
         super.init(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
         contentView = view
@@ -31,6 +31,9 @@ final class RegionSelectionWindow: NSWindow {
             self?.finishCancel()
         }
     }
+
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
 
     func show() {
         makeKeyAndOrderFront(nil)

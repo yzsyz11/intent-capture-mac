@@ -44,6 +44,8 @@ for source in "${SOURCES[@]}"; do
   }
 done
 
+bash "$ROOT/scripts/test-regressions.sh"
+
 swiftc \
   -target arm64-apple-macos13.0 \
   -typecheck \

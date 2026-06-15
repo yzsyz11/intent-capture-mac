@@ -8,6 +8,7 @@ final class CaptureService {
     private var activeSelectionWindow: RegionSelectionWindow?
 
     func perform(_ action: CaptureAction) {
+        guard activeSelectionWindow == nil else { return }
         guard ensureScreenCaptureAccess() else { return }
 
         switch action {
@@ -43,7 +44,7 @@ final class CaptureService {
     }
 
     private func selectRegion(_ completion: @escaping (CGRect) -> Void) {
-        let selector = RegionSelectionWindow(mode: .region)
+        let selector = RegionSelectionWindow(screen: Self.currentMouseScreen(), mode: .region)
         activeSelectionWindow = selector
         selector.onRegion = { [weak self] rect in
             guard let self else { return }
@@ -63,7 +64,7 @@ final class CaptureService {
 
     private func pickColor() {
         Toast.show("点击一个像素复制颜色，按 Esc 取消")
-        let selector = RegionSelectionWindow(mode: .point)
+        let selector = RegionSelectionWindow(screen: Self.currentMouseScreen(), mode: .point)
         activeSelectionWindow = selector
         selector.onPoint = { [weak self] point in
             guard let strongSelf = self else { return }
@@ -204,6 +205,16 @@ final class CaptureService {
     private static func appKitPointToQuartz(_ point: CGPoint) -> CGPoint {
         let top = NSScreen.screens.map { $0.frame.maxY }.max() ?? point.y
         return CGPoint(x: point.x, y: top - point.y)
+    }
+
+    private static func currentMouseScreen() -> NSScreen {
+        let point = NSEvent.mouseLocation
+        return NSScreen.screens.first { NSMouseInRect(point, $0.frame, false) }
+            ?? NSScreen.main
+            ?? NSScreen.screens.first
+            ?? {
+                fatalError("Intent Capture requires at least one display")
+            }()
     }
 }
 
