@@ -1,0 +1,21 @@
+.DS_Store
+
+# Build artifacts
+/build/
+/release/
+*.dmg
+
+# Local Codex/editor state
+/.codex/
+.vscode/
+.idea/
+
+# macOS crash/debug output
+*.ips
+*.crash
+*.log
+
+# Swift/Xcode derived output
+.build/
+DerivedData/
+*.xcuserdata/
