@@ -1,6 +1,6 @@
 import AppKit
 
-final class RegionSelectionWindow: NSWindow {
+final class RegionSelectionWindow: NSPanel {
     enum Mode {
         case region
         case point
@@ -13,9 +13,9 @@ final class RegionSelectionWindow: NSWindow {
     init(screen: NSScreen, mode: Mode) {
         let frame = screen.frame
         let view = RegionSelectionView(frame: CGRect(origin: .zero, size: frame.size), mode: mode)
-        super.init(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         contentView = view
-        level = .screenSaver
+        level = .mainMenu
         backgroundColor = .clear
         isOpaque = false
         isReleasedWhenClosed = false
@@ -37,7 +37,7 @@ final class RegionSelectionWindow: NSWindow {
 
     func show() {
         makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        orderFrontRegardless()
     }
 
     private func finishRegion(_ rect: CGRect) {
