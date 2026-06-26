@@ -258,25 +258,29 @@ private extension NSImage {
     }
 }
 
-final class ToastWindow: NSWindow {
+final class ToastWindow: NSPanel {
     init(message: String) {
-        let size = CGSize(width: 340, height: 40)
-        let screen = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
-        let origin = CGPoint(x: screen.maxX - size.width - 22, y: screen.maxY - size.height - 18)
+        let size = CGSize(width: 380, height: 56)
+        let screen = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
+        let origin = CGPoint(x: screen.midX - size.width / 2, y: screen.maxY - size.height - 60)
         super.init(
             contentRect: CGRect(origin: origin, size: size),
-            styleMask: [.borderless],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
         isOpaque = false
         backgroundColor = .clear
         isReleasedWhenClosed = false
-        level = .floating
+        level = .mainMenu
         hasShadow = true
         ignoresMouseEvents = true
-        collectionBehavior = [.canJoinAllSpaces, .transient]
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         contentView = ToastView(message: message)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 }
 
@@ -303,8 +307,13 @@ final class ToastView: NSView {
     init(message: String) {
         self.message = message
         self.tone = Self.tone(for: message)
-        super.init(frame: CGRect(x: 0, y: 0, width: 340, height: 40))
+        super.init(frame: CGRect(x: 0, y: 0, width: 380, height: 56))
         wantsLayer = true
+        alphaValue = 0
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.2
+            self.animator().alphaValue = 1
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -313,26 +322,78 @@ final class ToastView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         let card = bounds.insetBy(dx: 0.5, dy: 0.5)
-        let path = NSBezierPath(roundedRect: card, xRadius: 12, yRadius: 12)
-        NSColor.windowBackgroundColor.withAlphaComponent(0.78).setFill()
+        let path = NSBezierPath(roundedRect: card, xRadius: 14, yRadius: 14)
+
+        // Darker background for better contrast
+        NSColor.windowBackgroundColor.withAlphaComponent(0.85).setFill()
         path.fill()
-        NSColor.separatorColor.withAlphaComponent(0.42).setStroke()
+
+        // Brighter border
+        NSColor.separatorColor.withAlphaComponent(0.55).setStroke()
         path.lineWidth = 1
         path.stroke()
 
-        let strip = NSBezierPath(roundedRect: CGRect(x: 9, y: 10, width: 3, height: bounds.height - 20), xRadius: 1.5, yRadius: 1.5)
+        // Left accent strip - bigger
+        let strip = NSBezierPath(roundedRect: CGRect(x: 9, y: 12, width: 4, height: bounds.height - 24), xRadius: 2, yRadius: 2)
         tone.color.setFill()
         strip.fill()
 
-        tone.color.withAlphaComponent(0.16).setFill()
-        NSBezierPath(ovalIn: CGRect(x: 20, y: 15, width: 10, height: 10)).fill()
+        // Solid color dot instead of faint circle
+        tone.color.setFill()
+        NSBezierPath(ovalIn: CGRect(x: 22, y: 20, width: 14, height: 14)).fill()
 
+        // White icon in the dot
+        tone.color.withAlphaComponent(0.9).setFill()
+        let iconPath = NSBezierPath()
+        switch tone {
+        case .success:
+            // Checkmark
+            iconPath.move(to: CGPoint(x: 26, y: 27))
+            iconPath.line(to: CGPoint(x: 29, y: 30))
+            iconPath.line(to: CGPoint(x: 33, y: 23))
+            NSColor.white.withAlphaComponent(0.9).setStroke()
+            iconPath.lineWidth = 2
+            iconPath.stroke()
+        case .warning:
+            // Exclamation
+            iconPath.move(to: CGPoint(x: 29, y: 22))
+            iconPath.line(to: CGPoint(x: 29, y: 28))
+            iconPath.move(to: CGPoint(x: 29, y: 31))
+            iconPath.line(to: CGPoint(x: 29, y: 32))
+            NSColor.white.withAlphaComponent(0.9).setStroke()
+            iconPath.lineWidth = 2.2
+            iconPath.stroke()
+        case .failure:
+            // X
+            iconPath.move(to: CGPoint(x: 26, y: 23))
+            iconPath.line(to: CGPoint(x: 32, y: 31))
+            iconPath.move(to: CGPoint(x: 32, y: 23))
+            iconPath.line(to: CGPoint(x: 26, y: 31))
+            NSColor.white.withAlphaComponent(0.9).setStroke()
+            iconPath.lineWidth = 2.2
+            iconPath.stroke()
+        case .info:
+            // i
+            iconPath.move(to: CGPoint(x: 29, y: 24))
+            iconPath.line(to: CGPoint(x: 29, y: 25))
+            iconPath.move(to: CGPoint(x: 29, y: 27))
+            iconPath.line(to: CGPoint(x: 29, y: 32))
+            NSColor.white.withAlphaComponent(0.9).setStroke()
+            iconPath.lineWidth = 2
+            iconPath.stroke()
+        }
+
+        // Text - bigger, semibold
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12, weight: .regular),
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
             .foregroundColor: NSColor.labelColor
         ]
-        let rect = CGRect(x: 38, y: 12, width: bounds.width - 50, height: 16)
-        NSString(string: message).draw(in: rect, withAttributes: attrs)
+        let textRect = CGRect(x: 46, y: 16, width: bounds.width - 56, height: 24)
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        var merged = attrs
+        merged[.paragraphStyle] = paragraph
+        NSString(string: message).draw(in: textRect, withAttributes: merged)
     }
 
     private static func tone(for message: String) -> Tone {
