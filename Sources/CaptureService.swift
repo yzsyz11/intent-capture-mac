@@ -31,7 +31,7 @@ final class CaptureService {
         switch action {
         case .screenshotCopy:
             copy(image)
-            Toast.show("截图已复制，未保存文件")
+            Toast.show("截图已复制，未保存文件", image: image)
         case .screenshotSave:
             save(image, copyAfterSave: false)
         case .screenshotSaveAndCopy:
@@ -64,7 +64,10 @@ final class CaptureService {
 
     private func pickColor() {
         Toast.show("点击一个像素复制颜色，按 Esc 取消")
-        let selector = RegionSelectionWindow(screen: Self.currentMouseScreen(), mode: .point)
+        let screen = Self.currentMouseScreen()
+        let bg = CGWindowListCreateImage(Self.appKitRectToQuartz(screen.frame),
+                                         [.optionOnScreenOnly], kCGNullWindowID, [.bestResolution])
+        let selector = RegionSelectionWindow(screen: screen, mode: .point, backgroundCapture: bg)
         activeSelectionWindow = selector
         selector.onPoint = { [weak self] point in
             guard let strongSelf = self else { return }
@@ -114,9 +117,9 @@ final class CaptureService {
             try data.write(to: url)
             if copyAfterSave {
                 copy(image)
-                Toast.show("已保存并复制：\(url.path)")
+                Toast.show("已保存并复制：\(url.lastPathComponent)", image: image)
             } else {
-                Toast.show("已保存：\(url.path)")
+                Toast.show("已保存：\(url.lastPathComponent)", image: image)
             }
         } catch {
             Toast.show("保存失败：\(error.localizedDescription)")
@@ -144,7 +147,9 @@ final class CaptureService {
                 }
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(text, forType: .string)
-                Toast.show("OCR 已复制")
+                let preview = text.components(separatedBy: .newlines).first(where: { !$0.isEmpty }) ?? text
+                let truncated = preview.count > 44 ? String(preview.prefix(44)) + "…" : preview
+                Toast.show("OCR 已复制：\(truncated)")
             }
         }
         request.recognitionLevel = .accurate
@@ -259,8 +264,9 @@ private extension NSImage {
 }
 
 final class ToastWindow: NSPanel {
-    init(message: String) {
-        let size = CGSize(width: 380, height: 56)
+    init(message: String, image: NSImage? = nil, onPreview: (() -> Void)? = nil) {
+        let hasImage = image != nil
+        let size = CGSize(width: 420, height: hasImage ? 88 : 56)
         let screen = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
         let origin = CGPoint(x: screen.midX - size.width / 2, y: screen.maxY - size.height - 60)
         super.init(
@@ -274,9 +280,11 @@ final class ToastWindow: NSPanel {
         isReleasedWhenClosed = false
         level = .mainMenu
         hasShadow = true
-        ignoresMouseEvents = true
+        ignoresMouseEvents = onPreview == nil
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        contentView = ToastView(message: message)
+        let view = ToastView(message: message, image: image)
+        view.onPreview = onPreview
+        contentView = view
     }
 
     required init?(coder: NSCoder) {
@@ -303,11 +311,17 @@ final class ToastView: NSView {
 
     private let message: String
     private let tone: Tone
+    private let image: NSImage?
+    var onPreview: (() -> Void)?
 
-    init(message: String) {
+    private var thumbRect: CGRect = .zero
+
+    init(message: String, image: NSImage? = nil) {
         self.message = message
         self.tone = Self.tone(for: message)
-        super.init(frame: CGRect(x: 0, y: 0, width: 380, height: 56))
+        self.image = image
+        let h: CGFloat = image != nil ? 88 : 56
+        super.init(frame: CGRect(x: 0, y: 0, width: 420, height: h))
         wantsLayer = true
         alphaValue = 0
         NSAnimationContext.runAnimationGroup { ctx in
@@ -318,6 +332,27 @@ final class ToastView: NSView {
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        if onPreview != nil {
+            addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways], owner: self))
+        }
+    }
+
+    override func resetCursorRects() {
+        if onPreview != nil, !thumbRect.isEmpty {
+            addCursorRect(thumbRect, cursor: .pointingHand)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let pt = convert(event.locationInWindow, from: nil)
+        if thumbRect.contains(pt) {
+            onPreview?()
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -333,67 +368,119 @@ final class ToastView: NSView {
         path.lineWidth = 1
         path.stroke()
 
-        // Left accent strip - bigger
+        // Left accent strip
         let strip = NSBezierPath(roundedRect: CGRect(x: 9, y: 12, width: 4, height: bounds.height - 24), xRadius: 2, yRadius: 2)
         tone.color.setFill()
         strip.fill()
 
-        // Solid color dot instead of faint circle
+        // Icon dot (vertically centered)
+        let dotSize: CGFloat = 14
+        let dotX: CGFloat = 22
+        let dotY = (bounds.height - dotSize) / 2
         tone.color.setFill()
-        NSBezierPath(ovalIn: CGRect(x: 22, y: 20, width: 14, height: 14)).fill()
+        NSBezierPath(ovalIn: CGRect(x: dotX, y: dotY, width: dotSize, height: dotSize)).fill()
 
-        // White icon in the dot
-        tone.color.withAlphaComponent(0.9).setFill()
+        // Icon glyph (offset relative to dot center)
+        let cx = dotX + dotSize / 2  // 29
+        let cy = dotY + dotSize / 2
         let iconPath = NSBezierPath()
         switch tone {
         case .success:
-            // Checkmark
-            iconPath.move(to: CGPoint(x: 26, y: 27))
-            iconPath.line(to: CGPoint(x: 29, y: 30))
-            iconPath.line(to: CGPoint(x: 33, y: 23))
+            iconPath.move(to: CGPoint(x: cx - 3, y: cy))
+            iconPath.line(to: CGPoint(x: cx, y: cy + 3))
+            iconPath.line(to: CGPoint(x: cx + 4, y: cy - 4))
             NSColor.white.withAlphaComponent(0.9).setStroke()
             iconPath.lineWidth = 2
             iconPath.stroke()
         case .warning:
-            // Exclamation
-            iconPath.move(to: CGPoint(x: 29, y: 22))
-            iconPath.line(to: CGPoint(x: 29, y: 28))
-            iconPath.move(to: CGPoint(x: 29, y: 31))
-            iconPath.line(to: CGPoint(x: 29, y: 32))
+            iconPath.move(to: CGPoint(x: cx, y: cy - 5))
+            iconPath.line(to: CGPoint(x: cx, y: cy + 1))
+            iconPath.move(to: CGPoint(x: cx, y: cy + 4))
+            iconPath.line(to: CGPoint(x: cx, y: cy + 5))
             NSColor.white.withAlphaComponent(0.9).setStroke()
             iconPath.lineWidth = 2.2
             iconPath.stroke()
         case .failure:
-            // X
-            iconPath.move(to: CGPoint(x: 26, y: 23))
-            iconPath.line(to: CGPoint(x: 32, y: 31))
-            iconPath.move(to: CGPoint(x: 32, y: 23))
-            iconPath.line(to: CGPoint(x: 26, y: 31))
+            iconPath.move(to: CGPoint(x: cx - 3, y: cy - 4))
+            iconPath.line(to: CGPoint(x: cx + 3, y: cy + 4))
+            iconPath.move(to: CGPoint(x: cx + 3, y: cy - 4))
+            iconPath.line(to: CGPoint(x: cx - 3, y: cy + 4))
             NSColor.white.withAlphaComponent(0.9).setStroke()
             iconPath.lineWidth = 2.2
             iconPath.stroke()
         case .info:
-            // i
-            iconPath.move(to: CGPoint(x: 29, y: 24))
-            iconPath.line(to: CGPoint(x: 29, y: 25))
-            iconPath.move(to: CGPoint(x: 29, y: 27))
-            iconPath.line(to: CGPoint(x: 29, y: 32))
+            iconPath.move(to: CGPoint(x: cx, y: cy - 5))
+            iconPath.line(to: CGPoint(x: cx, y: cy - 4))
+            iconPath.move(to: CGPoint(x: cx, y: cy - 2))
+            iconPath.line(to: CGPoint(x: cx, y: cy + 5))
             NSColor.white.withAlphaComponent(0.9).setStroke()
             iconPath.lineWidth = 2
             iconPath.stroke()
         }
 
-        // Text - bigger, semibold
+        // Thumbnail
+        let thumbW: CGFloat = 96
+        let thumbH: CGFloat = 68
+        let thumbX = bounds.width - thumbW - 12
+        let thumbY = (bounds.height - thumbH) / 2
+        let tr = CGRect(x: thumbX, y: thumbY, width: thumbW, height: thumbH)
+        thumbRect = tr
+
+        if let image {
+            let thumbPath = NSBezierPath(roundedRect: tr.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
+            NSGraphicsContext.saveGraphicsState()
+            thumbPath.addClip()
+            image.draw(in: tr, from: .zero, operation: .sourceOver, fraction: 1)
+            NSGraphicsContext.restoreGraphicsState()
+            NSColor.separatorColor.withAlphaComponent(0.4).setStroke()
+            thumbPath.lineWidth = 1
+            thumbPath.stroke()
+
+            if onPreview != nil {
+                let hintAttrs: [NSAttributedString.Key: Any] = [
+                    .font: NSFont.systemFont(ofSize: 9, weight: .medium),
+                    .foregroundColor: NSColor.white
+                ]
+                let hint = NSString(string: "点击预览")
+                let hintSize = hint.size(withAttributes: hintAttrs)
+                let hintBg = CGRect(x: tr.midX - hintSize.width/2 - 4, y: tr.minY + 4,
+                                    width: hintSize.width + 8, height: hintSize.height + 3)
+                let hintBgPath = NSBezierPath(roundedRect: hintBg, xRadius: 3, yRadius: 3)
+                NSColor.black.withAlphaComponent(0.5).setFill()
+                hintBgPath.fill()
+                hint.draw(at: CGPoint(x: hintBg.minX + 4, y: hintBg.minY + 1.5), withAttributes: hintAttrs)
+            }
+        }
+
+        // Text
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
             .foregroundColor: NSColor.labelColor
         ]
-        let textRect = CGRect(x: 46, y: 16, width: bounds.width - 56, height: 24)
+        let textRight: CGFloat = image != nil ? thumbX - 8 : bounds.width - 10
+        let textRect = CGRect(x: 46, y: (bounds.height - 24) / 2, width: textRight - 46, height: 24)
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineBreakMode = .byTruncatingTail
-        var merged = attrs
-        merged[.paragraphStyle] = paragraph
-        NSString(string: message).draw(in: textRect, withAttributes: merged)
+
+        let ocrPrefix = "OCR 已复制："
+        if message.hasPrefix(ocrPrefix) {
+            let content = String(message.dropFirst(ocrPrefix.count))
+            let aStr = NSMutableAttributedString(string: ocrPrefix, attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                .foregroundColor: NSColor.labelColor,
+                .paragraphStyle: paragraph
+            ])
+            aStr.append(NSAttributedString(string: content, attributes: [
+                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
+                .foregroundColor: NSColor.systemBlue,
+                .paragraphStyle: paragraph
+            ]))
+            aStr.draw(in: textRect)
+        } else {
+            var merged = attrs
+            merged[.paragraphStyle] = paragraph
+            NSString(string: message).draw(in: textRect, withAttributes: merged)
+        }
     }
 
     private static func tone(for message: String) -> Tone {
@@ -413,18 +500,99 @@ final class ToastView: NSView {
 enum Toast {
     private static var current: ToastWindow?
 
-    static func show(_ message: String) {
+    static func show(_ message: String, image: NSImage? = nil) {
         DispatchQueue.main.async {
             current?.close()
-            let window = ToastWindow(message: message)
+            let onPreview: (() -> Void)? = image.map { img in
+                { ImagePreviewPanel.show(img) }
+            }
+            let window = ToastWindow(message: message, image: image, onPreview: onPreview)
             current = window
             window.orderFrontRegardless()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {
                 if current === window {
                     window.close()
                     current = nil
                 }
             }
+        }
+    }
+}
+
+final class ImagePreviewPanel: NSPanel {
+    private static var shared: ImagePreviewPanel?
+
+    static func show(_ image: NSImage) {
+        shared?.close()
+        let panel = ImagePreviewPanel(image: image)
+        shared = panel
+        panel.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private init(image: NSImage) {
+        let screen = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
+        let maxW = screen.width * 0.82
+        let maxH = screen.height * 0.82
+        let scale = min(maxW / image.size.width, maxH / image.size.height, 1.0)
+        let size = CGSize(width: max(image.size.width * scale, 200), height: max(image.size.height * scale, 200))
+        let origin = CGPoint(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2)
+        super.init(
+            contentRect: CGRect(origin: origin, size: size),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        isOpaque = false
+        backgroundColor = .clear
+        isReleasedWhenClosed = false
+        level = .floating
+        hasShadow = true
+        isMovableByWindowBackground = true
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        contentView = ImagePreviewView(image: image, onClose: { [weak self] in self?.close() })
+    }
+
+    override var canBecomeKey: Bool { true }
+}
+
+private final class ImagePreviewView: NSView {
+    private let image: NSImage
+    private let onClose: () -> Void
+
+    init(image: NSImage, onClose: @escaping () -> Void) {
+        self.image = image
+        self.onClose = onClose
+        super.init(frame: .zero)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 12, yRadius: 12)
+        NSColor.black.withAlphaComponent(0.05).setFill()
+        path.fill()
+        NSGraphicsContext.saveGraphicsState()
+        path.addClip()
+        image.draw(in: bounds, from: .zero, operation: .sourceOver, fraction: 1)
+        NSGraphicsContext.restoreGraphicsState()
+        NSColor.separatorColor.withAlphaComponent(0.3).setStroke()
+        path.lineWidth = 1
+        path.stroke()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onClose()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 || event.keyCode == 49 {
+            onClose()
+        } else {
+            super.keyDown(with: event)
         }
     }
 }
