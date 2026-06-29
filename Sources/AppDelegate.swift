@@ -12,13 +12,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var middleClickStatus = "中键监听：未启动"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
         setupMainMenu()
         setupStatusItem()
         registerHotkeys()
         startMouseMonitor()
         showHome()
-        NSApp.activate(ignoringOtherApps: true)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -132,7 +130,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showHome() {
+        NSApp.setActivationPolicy(.regular)
         showActionPanel()
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     @objc private func executeRecent() {
@@ -150,6 +150,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showActionPanel() {
+        NSApp.setActivationPolicy(.regular)
         if actionPanel == nil {
             actionPanel = ActionPanelWindow { [weak self] action in
                 guard let strongSelf = self else { return }
@@ -159,18 +160,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } onSettings: { [weak self] in
                 self?.showSettings()
             }
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: actionPanel,
+                queue: .main
+            ) { [weak self] _ in self?.windowDidClose() }
         }
         actionPanel?.showMainWindow()
     }
 
     @objc private func showSettings() {
-        settingsWindow = SettingsWindow { [weak self] in
+        NSApp.setActivationPolicy(.regular)
+        let win = SettingsWindow { [weak self] in
             self?.registerHotkeys()
             self?.startMouseMonitor()
             self?.setupStatusItem()
         }
-        settingsWindow?.makeKeyAndOrderFront(nil)
+        settingsWindow = win
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: win,
+            queue: .main
+        ) { [weak self] _ in self?.windowDidClose() }
+        win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    private func windowDidClose() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let anyVisible = (self.actionPanel?.isVisible ?? false) || (self.settingsWindow?.isVisible ?? false)
+            if !anyVisible {
+                NSApp.setActivationPolicy(.accessory)
+            }
+        }
     }
 
     @objc private func quit() {
