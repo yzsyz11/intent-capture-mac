@@ -4,22 +4,26 @@ import CoreGraphics
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let settings = AppSettings.shared
     private let captureService = CaptureService()
+    private let clipboardStore = ClipboardHistoryStore.shared
     private let hotkeys = GlobalHotkeyManager()
     private let mouseMonitor = MouseEventMonitor()
     private var statusItem: NSStatusItem?
     private var actionPanel: ActionPanelWindow?
     private var settingsWindow: SettingsWindow?
+    private var clipboardDock: ClipboardDockWindow?
     private var middleClickStatus = "中键监听：未启动"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMainMenu()
         setupStatusItem()
         registerHotkeys()
+        startClipboardHistory()
         startMouseMonitor()
         showHome()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        clipboardStore.stop()
         mouseMonitor.stop()
     }
 
@@ -49,6 +53,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let actionsItem = NSMenuItem()
         let actionsMenu = NSMenu(title: "操作")
         actionsMenu.addItem(NSMenuItem(title: "打开主页", action: #selector(showActionPanel), keyEquivalent: "w"))
+        actionsMenu.addItem(NSMenuItem(title: "打开剪贴板拓展坞", action: #selector(toggleClipboardDock), keyEquivalent: "d"))
         actionsMenu.addItem(NSMenuItem(title: "执行默认动作", action: #selector(executeRecent), keyEquivalent: "s"))
         actionsMenu.addItem(NSMenuItem.separator())
         for action in CaptureAction.allCases {
@@ -74,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
         menu.addItem(NSMenuItem(title: "打开主页", action: #selector(showActionPanel), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "打开剪贴板拓展坞", action: #selector(toggleClipboardDock), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "执行默认动作：\(settings.recentAction.title)", action: #selector(executeRecent), keyEquivalent: ""))
         menu.addItem(NSMenuItem.separator())
         for action in CaptureAction.allCases {
@@ -96,8 +102,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let registered = hotkeys.register(
             action: settings.actionHotkey,
             panel: settings.panelHotkey,
+            clipboard: settings.clipboardDockHotkey,
             onAction: { [weak self] in self?.executeRecent() },
-            onPanel: { [weak self] in self?.showActionPanel() }
+            onPanel: { [weak self] in self?.showActionPanel() },
+            onClipboard: { [weak self] in self?.toggleClipboardDock() }
         )
         if !registered {
             Toast.show("快捷键注册失败，可能被其他应用占用。请到设置里更换快捷键。")
@@ -126,6 +134,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 : "中键监听：未授权"
             setupStatusItem()
             Toast.show("中键监听不可用。请移除系统设置里的旧 IntentCapture 条目，重新添加 /Applications/IntentCapture.app，并重启 App。")
+        }
+    }
+
+    private func startClipboardHistory() {
+        clipboardStore.onChange = { [weak self] _ in
+            self?.clipboardDock?.refresh()
+        }
+        if settings.clipboardHistoryEnabled {
+            clipboardStore.start()
+        } else {
+            clipboardStore.stop()
         }
     }
 
@@ -169,10 +188,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         actionPanel?.showMainWindow()
     }
 
+    @objc private func toggleClipboardDock() {
+        if clipboardDock == nil {
+            clipboardDock = ClipboardDockWindow(store: clipboardStore)
+        }
+        clipboardDock?.toggle()
+    }
+
     @objc private func showSettings() {
         NSApp.setActivationPolicy(.regular)
         let win = SettingsWindow { [weak self] in
             self?.registerHotkeys()
+            self?.startClipboardHistory()
             self?.startMouseMonitor()
             self?.setupStatusItem()
         }
