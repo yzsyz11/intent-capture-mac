@@ -122,6 +122,33 @@ require_pattern "删除这条历史" "$CLIPBOARD_DOCK" \
 require_pattern "func delete\\(_ item: ClipboardHistoryItem\\)" "$CLIPBOARD_STORE" \
   "clipboard history store must support deleting one item"
 
+require_pattern "let isPinned: Bool" "$CLIPBOARD_STORE" \
+  "clipboard history items must persist whether a card is pinned"
+
+require_pattern "let pinnedAt: Date\\?" "$CLIPBOARD_STORE" \
+  "clipboard history items must persist pin order metadata"
+
+require_pattern "func togglePinned\\(_ item: ClipboardHistoryItem\\)" "$CLIPBOARD_STORE" \
+  "clipboard history store must support toggling a single pinned item"
+
+require_pattern 'items\.removeAll \{ !\$0\.isPinned \}' "$CLIPBOARD_STORE" \
+  "clearing clipboard history must preserve pinned items"
+
+require_pattern "sortedPinnedFirst" "$CLIPBOARD_STORE" \
+  "clipboard history must keep pinned items before normal history"
+
+require_pattern "trimNormalItemsToCapacity" "$CLIPBOARD_STORE" \
+  "clipboard history capacity trimming must not evict pinned items"
+
+require_pattern "pinButton\\.target = self" "$CLIPBOARD_DOCK" \
+  "each clipboard card must expose its own pin toggle button"
+
+require_pattern "store\\.togglePinned\\(item\\)" "$CLIPBOARD_DOCK" \
+  "the card pin button must toggle the selected clipboard item"
+
+require_pattern "item\\.isPinned \\? \"pin\\.fill\" : \"pin\"" "$CLIPBOARD_DOCK" \
+  "pinned cards must use a filled pin glyph"
+
 require_pattern "height: CGFloat = 182" "$CLIPBOARD_DOCK" \
   "clipboard dock should stay close to the compact shelf height from the UI reference"
 

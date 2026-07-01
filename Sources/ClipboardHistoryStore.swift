@@ -18,6 +18,78 @@ struct ClipboardHistoryItem: Codable, Equatable {
     let imageFilename: String?
     let imageWidth: Int?
     let imageHeight: Int?
+    let isPinned: Bool
+    let pinnedAt: Date?
+
+    init(
+        id: String,
+        kind: ClipboardHistoryKind,
+        createdAt: Date,
+        preview: String,
+        detail: String,
+        fingerprint: String,
+        imageFilename: String?,
+        imageWidth: Int?,
+        imageHeight: Int?,
+        isPinned: Bool = false,
+        pinnedAt: Date? = nil
+    ) {
+        self.id = id
+        self.kind = kind
+        self.createdAt = createdAt
+        self.preview = preview
+        self.detail = detail
+        self.fingerprint = fingerprint
+        self.imageFilename = imageFilename
+        self.imageWidth = imageWidth
+        self.imageHeight = imageHeight
+        self.isPinned = isPinned
+        self.pinnedAt = pinnedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case kind
+        case createdAt
+        case preview
+        case detail
+        case fingerprint
+        case imageFilename
+        case imageWidth
+        case imageHeight
+        case isPinned
+        case pinnedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        kind = try container.decode(ClipboardHistoryKind.self, forKey: .kind)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        preview = try container.decode(String.self, forKey: .preview)
+        detail = try container.decode(String.self, forKey: .detail)
+        fingerprint = try container.decode(String.self, forKey: .fingerprint)
+        imageFilename = try container.decodeIfPresent(String.self, forKey: .imageFilename)
+        imageWidth = try container.decodeIfPresent(Int.self, forKey: .imageWidth)
+        imageHeight = try container.decodeIfPresent(Int.self, forKey: .imageHeight)
+        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
+        pinnedAt = try container.decodeIfPresent(Date.self, forKey: .pinnedAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(kind, forKey: .kind)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(preview, forKey: .preview)
+        try container.encode(detail, forKey: .detail)
+        try container.encode(fingerprint, forKey: .fingerprint)
+        try container.encodeIfPresent(imageFilename, forKey: .imageFilename)
+        try container.encodeIfPresent(imageWidth, forKey: .imageWidth)
+        try container.encodeIfPresent(imageHeight, forKey: .imageHeight)
+        try container.encode(isPinned, forKey: .isPinned)
+        try container.encodeIfPresent(pinnedAt, forKey: .pinnedAt)
+    }
 }
 
 final class ClipboardHistoryStore {
@@ -68,8 +140,11 @@ final class ClipboardHistoryStore {
     }
 
     func clear() {
-        items.removeAll()
-        try? fileManager.removeItem(at: imagesDirectory)
+        let removed = items.filter { !$0.isPinned }
+        removed.compactMap(\.imageFilename).forEach { filename in
+            try? fileManager.removeItem(at: imagesDirectory.appendingPathComponent(filename))
+        }
+        items.removeAll { !$0.isPinned }
         save()
         onChange?(items)
     }
@@ -104,8 +179,32 @@ final class ClipboardHistoryStore {
             fingerprint: "\(kind.rawValue):\(trimmed)",
             imageFilename: nil,
             imageWidth: nil,
-            imageHeight: nil
+            imageHeight: nil,
+            isPinned: item.isPinned,
+            pinnedAt: item.pinnedAt
         )
+        items = sortedPinnedFirst(items)
+        save()
+        onChange?(items)
+    }
+
+    func togglePinned(_ item: ClipboardHistoryItem) {
+        guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
+        let existing = items[index]
+        items[index] = ClipboardHistoryItem(
+            id: existing.id,
+            kind: existing.kind,
+            createdAt: existing.createdAt,
+            preview: existing.preview,
+            detail: existing.detail,
+            fingerprint: existing.fingerprint,
+            imageFilename: existing.imageFilename,
+            imageWidth: existing.imageWidth,
+            imageHeight: existing.imageHeight,
+            isPinned: !existing.isPinned,
+            pinnedAt: existing.isPinned ? nil : Date()
+        )
+        items = sortedPinnedFirst(items)
         save()
         onChange?(items)
     }
@@ -128,17 +227,65 @@ final class ClipboardHistoryStore {
     }
 
     private func add(_ item: ClipboardHistoryItem) {
+        let existingPinned = items.first { $0.fingerprint == item.fingerprint && $0.isPinned }
+        let duplicateImages = items
+            .filter { $0.fingerprint == item.fingerprint }
+            .compactMap(\.imageFilename)
         items.removeAll { $0.fingerprint == item.fingerprint }
-        items.insert(item, at: 0)
-        if items.count > maxItems {
-            let removed = items.suffix(from: maxItems)
-            removed.compactMap(\.imageFilename).forEach { filename in
+        duplicateImages
+            .filter { $0 != item.imageFilename }
+            .forEach { filename in
                 try? fileManager.removeItem(at: imagesDirectory.appendingPathComponent(filename))
             }
-            items = Array(items.prefix(maxItems))
-        }
+        items.insert(ClipboardHistoryItem(
+            id: existingPinned?.id ?? item.id,
+            kind: item.kind,
+            createdAt: item.createdAt,
+            preview: item.preview,
+            detail: item.detail,
+            fingerprint: item.fingerprint,
+            imageFilename: item.imageFilename,
+            imageWidth: item.imageWidth,
+            imageHeight: item.imageHeight,
+            isPinned: existingPinned?.isPinned ?? item.isPinned,
+            pinnedAt: existingPinned?.pinnedAt ?? item.pinnedAt
+        ), at: 0)
+        items = sortedPinnedFirst(items)
+        trimNormalItemsToCapacity()
         save()
         onChange?(items)
+    }
+
+    private func sortedPinnedFirst(_ records: [ClipboardHistoryItem]) -> [ClipboardHistoryItem] {
+        let pinned = records.filter(\.isPinned).sorted {
+            ($0.pinnedAt ?? .distantPast) > ($1.pinnedAt ?? .distantPast)
+        }
+        let normal = records.filter { !$0.isPinned }
+        return pinned + normal
+    }
+
+    private func trimNormalItemsToCapacity() {
+        let pinnedCount = items.filter(\.isPinned).count
+        let normalCapacity = max(maxItems - pinnedCount, 0)
+        var normalSeen = 0
+        var trimmed: [ClipboardHistoryItem] = []
+        var removed: [ClipboardHistoryItem] = []
+
+        for item in items {
+            if item.isPinned {
+                trimmed.append(item)
+            } else if normalSeen < normalCapacity {
+                trimmed.append(item)
+                normalSeen += 1
+            } else {
+                removed.append(item)
+            }
+        }
+
+        removed.compactMap(\.imageFilename).forEach { filename in
+            try? fileManager.removeItem(at: imagesDirectory.appendingPathComponent(filename))
+        }
+        items = trimmed
     }
 
     private func makeItem(from pasteboard: NSPasteboard) -> ClipboardHistoryItem? {

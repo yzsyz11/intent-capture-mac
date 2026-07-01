@@ -111,7 +111,6 @@ final class ClipboardDockView: NSView {
     private let subtitle = NSTextField(labelWithString: "⌘D 呼出 / 鼠标横向滚动")
     private let emptyLabel = NSTextField(labelWithString: "复制文字、截图或色值后，会出现在这里")
     private let searchButton = DockSymbolButton(symbolName: "magnifyingglass", tooltip: "搜索")
-    private let pinButton = DockSymbolButton(symbolName: "pin", tooltip: "固定")
     private let settingsButton = DockSymbolButton(symbolName: "gearshape", tooltip: "设置")
     private let closeButton = DockSymbolButton(symbolName: "xmark", tooltip: "关闭")
     private let clearButton = DockSymbolButton(symbolName: "trash", tooltip: "清空历史")
@@ -143,9 +142,8 @@ final class ClipboardDockView: NSView {
         subtitle.frame = CGRect(x: 158, y: bounds.height - 35, width: 250, height: 17)
         closeButton.frame = CGRect(x: bounds.width - 44, y: bounds.height - 39, width: 24, height: 24)
         settingsButton.frame = CGRect(x: bounds.width - 76, y: bounds.height - 39, width: 24, height: 24)
-        pinButton.frame = CGRect(x: bounds.width - 108, y: bounds.height - 39, width: 24, height: 24)
-        searchButton.frame = CGRect(x: bounds.width - 140, y: bounds.height - 39, width: 24, height: 24)
-        clearButton.frame = CGRect(x: bounds.width - 172, y: bounds.height - 39, width: 24, height: 24)
+        searchButton.frame = CGRect(x: bounds.width - 108, y: bounds.height - 39, width: 24, height: 24)
+        clearButton.frame = CGRect(x: bounds.width - 140, y: bounds.height - 39, width: 24, height: 24)
         scrollView.frame = CGRect(x: 20, y: 25, width: bounds.width - 40, height: 108)
         emptyLabel.frame = CGRect(x: 24, y: 70, width: bounds.width - 48, height: 24)
         indicatorView.frame = CGRect(x: bounds.midX - 90, y: 16, width: 180, height: 4)
@@ -196,9 +194,6 @@ final class ClipboardDockView: NSView {
 
         settingsButton.autoresizingMask = [.minXMargin, .minYMargin]
         addSubview(settingsButton)
-
-        pinButton.autoresizingMask = [.minXMargin, .minYMargin]
-        addSubview(pinButton)
 
         searchButton.autoresizingMask = [.minXMargin, .minYMargin]
         addSubview(searchButton)
@@ -386,6 +381,7 @@ final class ClipboardCardView: NSView, NSTextFieldDelegate {
     private let item: ClipboardHistoryItem
     private let store: ClipboardHistoryStore
     private let previewButton = ClipboardPreviewButton()
+    private let pinButton: DockSymbolButton
     private var isHovering = false
     private var editField: NSTextField?
     private var pendingSingleClick: DispatchWorkItem?
@@ -393,9 +389,14 @@ final class ClipboardCardView: NSView, NSTextFieldDelegate {
     init(item: ClipboardHistoryItem, store: ClipboardHistoryStore) {
         self.item = item
         self.store = store
+        self.pinButton = DockSymbolButton(symbolName: item.isPinned ? "pin.fill" : "pin", tooltip: item.isPinned ? "取消固定" : "固定到前面")
         super.init(frame: .zero)
         wantsLayer = true
         toolTip = "单击复制并收起，双击编辑，右键删除"
+        pinButton.target = self
+        pinButton.action = #selector(togglePinned)
+        pinButton.contentTintColor = item.isPinned ? .systemOrange : .secondaryLabelColor
+        addSubview(pinButton)
         previewButton.target = self
         previewButton.action = #selector(previewItem)
         addSubview(previewButton)
@@ -414,6 +415,7 @@ final class ClipboardCardView: NSView, NSTextFieldDelegate {
     override func layout() {
         super.layout()
         previewButton.frame = CGRect(x: bounds.width - 56, y: 8, width: 44, height: 22)
+        pinButton.frame = CGRect(x: bounds.width - 86, y: 8, width: 22, height: 22)
         editField?.frame = bounds.insetBy(dx: 10, dy: 10)
     }
 
@@ -522,7 +524,7 @@ final class ClipboardCardView: NSView, NSTextFieldDelegate {
             .font: NSFont.systemFont(ofSize: 10, weight: .medium),
             .foregroundColor: NSColor.secondaryLabelColor
         ]
-        NSString(string: label).draw(in: CGRect(x: 12, y: 11, width: bounds.width - 76, height: 14), withAttributes: attrs)
+        NSString(string: label).draw(in: CGRect(x: 12, y: 11, width: bounds.width - 104, height: 14), withAttributes: attrs)
     }
 
     private func drawTextCard(accent: NSColor) {
@@ -570,6 +572,11 @@ final class ClipboardCardView: NSView, NSTextFieldDelegate {
 
     @objc private func previewItem() {
         ClipboardPreviewWindow.show(item: item, image: store.image(for: item))
+    }
+
+    @objc private func togglePinned() {
+        store.togglePinned(item)
+        Toast.show(item.isPinned ? "已取消固定" : "已固定到剪贴板前面")
     }
 
     @objc private func deleteItem() {
