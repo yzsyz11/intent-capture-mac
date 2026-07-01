@@ -25,6 +25,11 @@ final class AppSettings {
         set { defaults.set(newValue.rawValue, forKey: "panelHotkey") }
     }
 
+    var clipboardDockHotkey: HotkeyDefinition {
+        get { HotkeyDefinition(rawValue: defaults.string(forKey: "clipboardDockHotkey") ?? "command+d") ?? .defaultClipboardDock }
+        set { defaults.set(newValue.rawValue, forKey: "clipboardDockHotkey") }
+    }
+
     var saveDirectory: URL {
         get {
             if let value = defaults.string(forKey: "saveDirectory") {
@@ -48,6 +53,16 @@ final class AppSettings {
             return defaults.bool(forKey: "middleClickEnabled")
         }
         set { defaults.set(newValue, forKey: "middleClickEnabled") }
+    }
+
+    var clipboardHistoryEnabled: Bool {
+        get {
+            if defaults.object(forKey: "clipboardHistoryEnabled") == nil {
+                return true
+            }
+            return defaults.bool(forKey: "clipboardHistoryEnabled")
+        }
+        set { defaults.set(newValue, forKey: "clipboardHistoryEnabled") }
     }
 
     func buildFileURL() throws -> URL {

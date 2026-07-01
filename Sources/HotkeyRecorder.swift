@@ -14,6 +14,7 @@ struct HotkeyDefinition: Codable, Equatable {
 
     static let defaultAction = HotkeyDefinition(keyCode: UInt32(kVK_ANSI_S), modifiers: controlModifier | optionModifier, rawValue: "control+option+s")
     static let defaultPanel = HotkeyDefinition(keyCode: UInt32(kVK_ANSI_W), modifiers: controlModifier | optionModifier, rawValue: "control+option+w")
+    static let defaultClipboardDock = HotkeyDefinition(keyCode: UInt32(kVK_ANSI_D), modifiers: commandModifier, rawValue: "command+d")
 
     init(keyCode: UInt32, modifiers: UInt32, rawValue: String) {
         self.keyCode = keyCode
