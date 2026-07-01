@@ -8,8 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hotkeys = GlobalHotkeyManager()
     private let mouseMonitor = MouseEventMonitor()
     private var statusItem: NSStatusItem?
-    private var actionPanel: ActionPanelWindow?
-    private var settingsWindow: SettingsWindow?
+    private var homeWindow: HomeWindow?
     private var clipboardDock: ClipboardDockWindow?
     private var middleClickStatus = "中键监听：未启动"
 
@@ -169,23 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showActionPanel() {
-        NSApp.setActivationPolicy(.regular)
-        if actionPanel == nil {
-            actionPanel = ActionPanelWindow { [weak self] action in
-                guard let strongSelf = self else { return }
-                strongSelf.settings.recentAction = action
-                strongSelf.setupStatusItem()
-                strongSelf.captureService.perform(action)
-            } onSettings: { [weak self] in
-                self?.showSettings()
-            }
-            NotificationCenter.default.addObserver(
-                forName: NSWindow.willCloseNotification,
-                object: actionPanel,
-                queue: .main
-            ) { [weak self] _ in self?.windowDidClose() }
-        }
-        actionPanel?.showMainWindow()
+        openHome(section: .action)
     }
 
     @objc private func toggleClipboardDock() {
@@ -196,28 +179,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showSettings() {
+        openHome(section: .hotkeys)
+    }
+
+    private func openHome(section: HomeSection) {
         NSApp.setActivationPolicy(.regular)
-        let win = SettingsWindow { [weak self] in
-            self?.registerHotkeys()
-            self?.startClipboardHistory()
-            self?.startMouseMonitor()
-            self?.setupStatusItem()
+        if homeWindow == nil {
+            let window = HomeWindow(onSelectAction: { [weak self] action in
+                guard let strongSelf = self else { return }
+                strongSelf.homeWindow?.close()
+                strongSelf.settings.recentAction = action
+                strongSelf.setupStatusItem()
+                strongSelf.captureService.perform(action)
+            }, onSettingsSaved: { [weak self] in
+                self?.registerHotkeys()
+                self?.startClipboardHistory()
+                self?.startMouseMonitor()
+                self?.setupStatusItem()
+            })
+            homeWindow = window
+            NotificationCenter.default.addObserver(
+                forName: NSWindow.willCloseNotification,
+                object: window,
+                queue: .main
+            ) { [weak self] _ in self?.windowDidClose() }
         }
-        settingsWindow = win
-        NotificationCenter.default.addObserver(
-            forName: NSWindow.willCloseNotification,
-            object: win,
-            queue: .main
-        ) { [weak self] _ in self?.windowDidClose() }
-        win.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        homeWindow?.showMainWindow(section: section)
     }
 
     private func windowDidClose() {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            let anyVisible = (self.actionPanel?.isVisible ?? false) || (self.settingsWindow?.isVisible ?? false)
-            if !anyVisible {
+            if !(self.homeWindow?.isVisible ?? false) {
                 NSApp.setActivationPolicy(.accessory)
             }
         }

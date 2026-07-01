@@ -41,9 +41,8 @@ SOURCES=(
   "$ROOT/Sources/ClipboardHistoryStore.swift"
   "$ROOT/Sources/CaptureService.swift"
   "$ROOT/Sources/RegionSelectionWindow.swift"
-  "$ROOT/Sources/ActionPanelWindow.swift"
+  "$ROOT/Sources/HomeWindow.swift"
   "$ROOT/Sources/ClipboardDockWindow.swift"
-  "$ROOT/Sources/SettingsWindow.swift"
   "$ROOT/Sources/AppDelegate.swift"
   "$ROOT/Sources/main.swift"
 )
