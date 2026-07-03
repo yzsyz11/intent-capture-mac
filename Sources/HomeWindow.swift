@@ -521,19 +521,25 @@ final class MouseSectionView: NSView {
     @objc private func toggleChanged() {
         settings.middleClickEnabled = toggle.state == .on
         onSave()
+        refreshPermissionStatus()
         Toast.show(settings.middleClickEnabled ? "已启用鼠标中键触发" : "已关闭鼠标中键触发")
     }
 
     @objc private func requestAccessibility() {
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
+        settings.middleClickEnabled = true
+        toggle.state = .on
         AXIsProcessTrustedWithOptions(options)
+        onSave()
         refreshPermissionStatus()
-        Toast.show("授权后请退出并重新打开 Intent Capture。")
+        Toast.show(AXIsProcessTrusted() ? "中键触发已启用" : "授权后请退出并重新打开 Intent Capture。")
     }
 
     func refreshPermissionStatus() {
-        if AXIsProcessTrusted() {
-            statusLabel.stringValue = "辅助功能权限已生效；保存后会重启中键监听"
+        if !settings.middleClickEnabled {
+            statusLabel.stringValue = "中键触发已关闭；打开上方开关后才会监听"
+        } else if AXIsProcessTrusted() {
+            statusLabel.stringValue = "辅助功能权限已生效；中键触发已启用"
         } else {
             statusLabel.stringValue = "辅助功能权限未对当前 App 生效；可能是旧条目或需重启"
         }

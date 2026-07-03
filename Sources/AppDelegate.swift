@@ -222,6 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func requestAccessibilityPermission() {
         if MouseEventMonitor.requestAccessibilityPermission() {
+            settings.middleClickEnabled = true
             startMouseMonitor()
             Toast.show("中键权限已开启")
         } else {

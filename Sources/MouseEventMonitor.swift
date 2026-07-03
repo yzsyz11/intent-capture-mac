@@ -7,11 +7,16 @@ final class MouseEventMonitor {
     private var middleDownAt: Date?
     private var onShortPress: (() -> Void)?
     private var onLongPress: (() -> Void)?
+    private(set) var isRunning = false
 
     private let longPressThreshold: TimeInterval = 0.5
 
     func start(onShortPress: @escaping () -> Void, onLongPress: @escaping () -> Void) -> Bool {
         stop()
+
+        guard Self.isAccessibilityTrusted() else {
+            return false
+        }
 
         self.onShortPress = onShortPress
         self.onLongPress = onLongPress
@@ -30,6 +35,10 @@ final class MouseEventMonitor {
                 }
 
                 let monitor = Unmanaged<MouseEventMonitor>.fromOpaque(userInfo).takeUnretainedValue()
+                if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+                    monitor.reenableTapIfNeeded()
+                    return Unmanaged.passUnretained(event)
+                }
                 monitor.handle(type: type, event: event)
                 return Unmanaged.passUnretained(event)
             },
@@ -46,7 +55,8 @@ final class MouseEventMonitor {
         }
 
         CGEvent.tapEnable(tap: tap, enable: true)
-        return true
+        isRunning = CGEvent.tapIsEnabled(tap: tap)
+        return isRunning
     }
 
     func stop() {
@@ -61,6 +71,7 @@ final class MouseEventMonitor {
         runLoopSource = nil
         eventTap = nil
         middleDownAt = nil
+        isRunning = false
     }
 
     static func isAccessibilityTrusted() -> Bool {
@@ -97,5 +108,11 @@ final class MouseEventMonitor {
         default:
             break
         }
+    }
+
+    private func reenableTapIfNeeded() {
+        guard let eventTap else { return }
+        CGEvent.tapEnable(tap: eventTap, enable: true)
+        isRunning = CGEvent.tapIsEnabled(tap: eventTap)
     }
 }
