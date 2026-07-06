@@ -3,12 +3,16 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+INFO_PLIST="$ROOT/Info.plist"
+MAIN_SWIFT="$ROOT/Sources/main.swift"
 CAPTURE_SERVICE="$ROOT/Sources/CaptureService.swift"
 REGION_WINDOW="$ROOT/Sources/RegionSelectionWindow.swift"
 HOTKEY_RECORDER="$ROOT/Sources/HotkeyRecorder.swift"
 GLOBAL_HOTKEY="$ROOT/Sources/GlobalHotkey.swift"
 CLIPBOARD_STORE="$ROOT/Sources/ClipboardHistoryStore.swift"
 CLIPBOARD_DOCK="$ROOT/Sources/ClipboardDockWindow.swift"
+APP_DELEGATE="$ROOT/Sources/AppDelegate.swift"
+MOUSE_MONITOR="$ROOT/Sources/MouseEventMonitor.swift"
 
 require_pattern() {
   local pattern="$1"
@@ -32,7 +36,7 @@ reject_pattern() {
   fi
 }
 
-require_pattern "guard activeSelectionWindow == nil else \\{ return \\}" "$CAPTURE_SERVICE" \
+require_pattern "guard activeSelectionWindow == nil else \\{" "$CAPTURE_SERVICE" \
   "capture actions must ignore duplicate triggers while a selection window is active"
 
 require_pattern "RegionSelectionWindow\\(screen:" "$CAPTURE_SERVICE" \
@@ -79,6 +83,24 @@ require_pattern "removeMonitor" "$CLIPBOARD_DOCK" \
 
 require_pattern "NSEvent\\.addLocalMonitorForEvents\\(matching: \\.keyDown" "$GLOBAL_HOTKEY" \
   "Command-D must have a local keyboard fallback when the app is active"
+
+require_pattern "<key>LSUIElement</key>" "$INFO_PLIST" \
+  "Intent Capture must be a menu bar utility that stays out of the Dock"
+
+require_pattern "app\\.setActivationPolicy\\(\\.accessory\\)" "$MAIN_SWIFT" \
+  "Intent Capture must launch without adding a Dock icon"
+
+reject_pattern "setActivationPolicy\\(\\.regular\\)" "$APP_DELEGATE" \
+  "middle-click, hotkey, and status-bar actions must not add the app back to the Dock"
+
+require_pattern "addGlobalMonitorForEvents\\(matching: mask\\)" "$MOUSE_MONITOR" \
+  "middle-click listening must have an NSEvent global fallback when the CGEvent tap is unreliable"
+
+require_pattern "addLocalMonitorForEvents\\(matching: mask\\)" "$MOUSE_MONITOR" \
+  "middle-click listening must also work while Intent Capture is active"
+
+require_pattern "guard let downAt = middleDownAt else \\{ return \\}" "$MOUSE_MONITOR" \
+  "middle-click CGEvent and NSEvent paths must deduplicate the same mouse-up event"
 
 reject_pattern "windowBackgroundColor\\.withAlphaComponent\\(0\\.42\\)" "$CLIPBOARD_DOCK" \
   "clipboard dock cards must not use opaque system window backgrounds over the glass shelf"

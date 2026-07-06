@@ -1,9 +1,12 @@
+import AppKit
 import ApplicationServices
 import Foundation
 
 final class MouseEventMonitor {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var globalMouseMonitor: Any?
+    private var localMouseMonitor: Any?
     private var middleDownAt: Date?
     private var onShortPress: (() -> Void)?
     private var onLongPress: (() -> Void)?
@@ -20,6 +23,7 @@ final class MouseEventMonitor {
 
         self.onShortPress = onShortPress
         self.onLongPress = onLongPress
+        startNSEventFallbackMonitors()
 
         let mask = (1 << CGEventType.otherMouseDown.rawValue) | (1 << CGEventType.otherMouseUp.rawValue)
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
@@ -44,7 +48,8 @@ final class MouseEventMonitor {
             },
             userInfo: userInfo
         ) else {
-            return false
+            isRunning = true
+            return true
         }
 
         eventTap = tap
@@ -55,7 +60,7 @@ final class MouseEventMonitor {
         }
 
         CGEvent.tapEnable(tap: tap, enable: true)
-        isRunning = CGEvent.tapIsEnabled(tap: tap)
+        isRunning = CGEvent.tapIsEnabled(tap: tap) || globalMouseMonitor != nil || localMouseMonitor != nil
         return isRunning
     }
 
@@ -68,6 +73,15 @@ final class MouseEventMonitor {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
         }
 
+        if let globalMouseMonitor {
+            NSEvent.removeMonitor(globalMouseMonitor)
+        }
+        if let localMouseMonitor {
+            NSEvent.removeMonitor(localMouseMonitor)
+        }
+
+        globalMouseMonitor = nil
+        localMouseMonitor = nil
         runLoopSource = nil
         eventTap = nil
         middleDownAt = nil
@@ -93,26 +107,59 @@ final class MouseEventMonitor {
             middleDownAt = Date()
 
         case .otherMouseUp:
-            let elapsed = Date().timeIntervalSince(middleDownAt ?? Date())
+            guard let downAt = middleDownAt else { return }
+            let elapsed = Date().timeIntervalSince(downAt)
             middleDownAt = nil
-
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                if elapsed >= self.longPressThreshold {
-                    self.onLongPress?()
-                } else {
-                    self.onShortPress?()
-                }
-            }
+            dispatchPress(elapsed: elapsed)
 
         default:
             break
         }
     }
 
+    private func handle(_ event: NSEvent) {
+        guard event.buttonNumber == 2 else { return }
+
+        switch event.type {
+        case .otherMouseDown:
+            middleDownAt = Date()
+
+        case .otherMouseUp:
+            guard let downAt = middleDownAt else { return }
+            let elapsed = Date().timeIntervalSince(downAt)
+            middleDownAt = nil
+            dispatchPress(elapsed: elapsed)
+
+        default:
+            break
+        }
+    }
+
+    private func startNSEventFallbackMonitors() {
+        let mask: NSEvent.EventTypeMask = [.otherMouseDown, .otherMouseUp]
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+            self?.handle(event)
+        }
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            self?.handle(event)
+            return event
+        }
+    }
+
+    private func dispatchPress(elapsed: TimeInterval) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            if elapsed >= self.longPressThreshold {
+                self.onLongPress?()
+            } else {
+                self.onShortPress?()
+            }
+        }
+    }
+
     private func reenableTapIfNeeded() {
         guard let eventTap else { return }
         CGEvent.tapEnable(tap: eventTap, enable: true)
-        isRunning = CGEvent.tapIsEnabled(tap: eventTap)
+        isRunning = CGEvent.tapIsEnabled(tap: eventTap) || globalMouseMonitor != nil || localMouseMonitor != nil
     }
 }

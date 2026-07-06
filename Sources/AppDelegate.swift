@@ -148,7 +148,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showHome() {
-        NSApp.setActivationPolicy(.regular)
         showActionPanel()
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -183,13 +182,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func openHome(section: HomeSection) {
-        NSApp.setActivationPolicy(.regular)
         if homeWindow == nil {
             let window = HomeWindow(onSelectAction: { [weak self] action in
                 guard let strongSelf = self else { return }
-                strongSelf.homeWindow?.close()
                 strongSelf.settings.recentAction = action
                 strongSelf.setupStatusItem()
+                strongSelf.homeWindow?.close()
                 strongSelf.captureService.perform(action)
             }, onSettingsSaved: { [weak self] in
                 self?.registerHotkeys()
@@ -198,22 +196,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.setupStatusItem()
             })
             homeWindow = window
-            NotificationCenter.default.addObserver(
-                forName: NSWindow.willCloseNotification,
-                object: window,
-                queue: .main
-            ) { [weak self] _ in self?.windowDidClose() }
         }
         homeWindow?.showMainWindow(section: section)
-    }
-
-    private func windowDidClose() {
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            if !(self.homeWindow?.isVisible ?? false) {
-                NSApp.setActivationPolicy(.accessory)
-            }
-        }
     }
 
     @objc private func quit() {
