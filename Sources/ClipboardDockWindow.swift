@@ -6,6 +6,7 @@ final class ClipboardDockWindow: NSPanel {
     private let dockView: ClipboardDockView
     private var outsideMouseMonitor: Any?
     private var localMouseMonitor: Any?
+    private var editorPanel: ClipboardDockEditorPanel?
 
     init(store: ClipboardHistoryStore) {
         self.store = store
@@ -48,12 +49,14 @@ final class ClipboardDockWindow: NSPanel {
     }
 
     func hideDock() {
+        closeEditor()
         stopDismissMonitors()
         orderOut(nil)
     }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == UInt16(kVK_Escape) {
+            if dockView.handleEscape() { return }
             hideDock()
             return
         }
@@ -96,9 +99,37 @@ final class ClipboardDockWindow: NSPanel {
     private func hideIfMouseIsOutsideDock() {
         guard isVisible else { return }
         let point = NSEvent.mouseLocation
-        if !frame.insetBy(dx: -2, dy: -2).contains(point) {
+        let isInsideEditor = editorPanel?.frame.insetBy(dx: -2, dy: -2).contains(point) ?? false
+        if !frame.insetBy(dx: -2, dy: -2).contains(point), !isInsideEditor {
             hideDock()
         }
+    }
+
+    fileprivate func showEditor(for item: ClipboardHistoryItem, anchor: CGPoint) {
+        closeEditor()
+        let panel = ClipboardDockEditorPanel(
+            item: item,
+            onSave: { [weak self] text in
+                guard let self else { return }
+                self.store.update(item, newText: text)
+                let panelFrame = self.editorPanel?.frame ?? CGRect(x: anchor.x, y: self.frame.maxY, width: 0, height: 0)
+                let feedbackPoint = CGPoint(x: panelFrame.midX, y: panelFrame.maxY)
+                self.closeEditor()
+                self.dockView.reload()
+                ClipboardDockFeedback.show(message: "已保存 · \(item.kind.categoryTitle)", tone: .success, anchor: feedbackPoint)
+            },
+            onCancel: { [weak self] in self?.closeEditor() }
+        )
+        editorPanel = panel
+        addChildWindow(panel, ordered: .above)
+        panel.show(above: frame, centeredAt: anchor.x)
+    }
+
+    private func closeEditor() {
+        guard let editorPanel else { return }
+        removeChildWindow(editorPanel)
+        editorPanel.close()
+        self.editorPanel = nil
     }
 }
 
@@ -113,8 +144,12 @@ final class ClipboardDockView: NSView {
     private let searchButton = DockSymbolButton(symbolName: "magnifyingglass", tooltip: "搜索")
     private let settingsButton = DockSymbolButton(symbolName: "gearshape", tooltip: "设置")
     private let closeButton = DockSymbolButton(symbolName: "xmark", tooltip: "关闭")
-    private let clearButton = DockSymbolButton(symbolName: "trash", tooltip: "清空历史")
+    private let clearButton = DockSymbolButton(symbolName: "trash", tooltip: "选择删除")
     private let indicatorView = ScrollIndicatorView(frame: .zero)
+    private let selectAllButton = DockTextButton(title: "全选", target: nil, action: nil)
+    private let cancelDeleteButton = DockTextButton(title: "取消", target: nil, action: nil)
+    private let confirmDeleteButton = DockTextButton(title: "删除（0）", target: nil, action: nil)
+    private var selectionState = ClipboardDockSelectionState()
 
     init(store: ClipboardHistoryStore) {
         self.store = store
@@ -129,10 +164,23 @@ final class ClipboardDockView: NSView {
     }
 
     func reload() {
-        stripView.configure(items: store.items, store: store)
+        stripView.configure(
+            items: store.items,
+            store: store,
+            onToggleDeletion: { [weak self] id in self?.toggleDeletionSelection(id: id) },
+            onEdit: { [weak self] item, anchor in self?.requestEdit(item: item, anchor: anchor) }
+        )
+        stripView.setDeletionState(isActive: selectionState.isActive, selectedIDs: selectionState.selectedIDs)
         emptyLabel.isHidden = !store.items.isEmpty
         needsDisplay = true
         indicatorView.refresh()
+        updateDeletionControls()
+    }
+
+    func handleEscape() -> Bool {
+        guard selectionState.isActive else { return false }
+        cancelDeletionMode()
+        return true
     }
 
     override func layout() {
@@ -144,6 +192,9 @@ final class ClipboardDockView: NSView {
         settingsButton.frame = CGRect(x: bounds.width - 76, y: bounds.height - 39, width: 24, height: 24)
         searchButton.frame = CGRect(x: bounds.width - 108, y: bounds.height - 39, width: 24, height: 24)
         clearButton.frame = CGRect(x: bounds.width - 140, y: bounds.height - 39, width: 24, height: 24)
+        confirmDeleteButton.frame = CGRect(x: bounds.width - 112, y: bounds.height - 41, width: 92, height: 26)
+        cancelDeleteButton.frame = CGRect(x: bounds.width - 174, y: bounds.height - 41, width: 54, height: 26)
+        selectAllButton.frame = CGRect(x: bounds.width - 236, y: bounds.height - 41, width: 54, height: 26)
         scrollView.frame = CGRect(x: 20, y: 25, width: bounds.width - 40, height: 108)
         emptyLabel.frame = CGRect(x: 24, y: 70, width: bounds.width - 48, height: 24)
         indicatorView.frame = CGRect(x: bounds.midX - 90, y: 16, width: 180, height: 4)
@@ -199,9 +250,25 @@ final class ClipboardDockView: NSView {
         addSubview(searchButton)
 
         clearButton.target = self
-        clearButton.action = #selector(clearHistory)
+        clearButton.action = #selector(enterDeletionMode)
         clearButton.autoresizingMask = [.minXMargin, .minYMargin]
         addSubview(clearButton)
+
+        selectAllButton.target = self
+        selectAllButton.action = #selector(selectAllForDeletion)
+        selectAllButton.isHidden = true
+        addSubview(selectAllButton)
+
+        cancelDeleteButton.target = self
+        cancelDeleteButton.action = #selector(cancelDeletionMode)
+        cancelDeleteButton.isHidden = true
+        addSubview(cancelDeleteButton)
+
+        confirmDeleteButton.target = self
+        confirmDeleteButton.action = #selector(confirmDeletion)
+        confirmDeleteButton.contentTintColor = .systemRed
+        confirmDeleteButton.isHidden = true
+        addSubview(confirmDeleteButton)
 
         scrollView.drawsBackground = false
         scrollView.hasHorizontalScroller = false
@@ -221,8 +288,56 @@ final class ClipboardDockView: NSView {
         (window as? ClipboardDockWindow)?.hideDock()
     }
 
-    @objc private func clearHistory() {
-        store.clear()
+    @objc private func enterDeletionMode() {
+        selectionState.enter()
+        updateDeletionControls()
+    }
+
+    @objc private func selectAllForDeletion() {
+        selectionState.selectAll(ids: store.items.map(\.id))
+        updateDeletionControls()
+    }
+
+    @objc private func cancelDeletionMode() {
+        selectionState.cancel()
+        updateDeletionControls()
+    }
+
+    @objc private func confirmDeletion() {
+        let ids = selectionState.selectedIDs
+        guard !ids.isEmpty else { return }
+        let count = ids.count
+        let mouse = NSEvent.mouseLocation
+        let anchor = CGPoint(x: window?.frame.midX ?? mouse.x, y: window?.frame.maxY ?? mouse.y)
+        selectionState.cancel()
+        updateDeletionControls()
+        store.delete(ids: ids)
+        ClipboardDockFeedback.show(message: "已删除 · \(count) 项", tone: .destructive, anchor: anchor)
+    }
+
+    private func toggleDeletionSelection(id: String) {
+        selectionState.toggle(id: id)
+        updateDeletionControls()
+    }
+
+    private func requestEdit(item: ClipboardHistoryItem, anchor: CGPoint) {
+        guard !selectionState.isActive else { return }
+        (window as? ClipboardDockWindow)?.showEditor(for: item, anchor: anchor)
+    }
+
+    private func updateDeletionControls() {
+        let isDeleting = selectionState.isActive
+        searchButton.isHidden = isDeleting
+        settingsButton.isHidden = isDeleting
+        closeButton.isHidden = isDeleting
+        clearButton.isHidden = isDeleting
+        selectAllButton.isHidden = !isDeleting
+        cancelDeleteButton.isHidden = !isDeleting
+        confirmDeleteButton.isHidden = !isDeleting
+        confirmDeleteButton.title = "删除（\(selectionState.selectedIDs.count)）"
+        confirmDeleteButton.isEnabled = !selectionState.selectedIDs.isEmpty
+        subtitle.stringValue = isDeleting ? "选择要删除的卡片，确认后才会删除" : "⌘D 呼出 / 鼠标横向滚动"
+        stripView.setDeletionState(isActive: isDeleting, selectedIDs: selectionState.selectedIDs)
     }
 
     private func drawContentBand() {
@@ -353,13 +468,27 @@ final class HorizontalWheelScrollView: NSScrollView {
 final class ClipboardCardStripView: NSView {
     private var cardViews: [ClipboardCardView] = []
 
-    func configure(items: [ClipboardHistoryItem], store: ClipboardHistoryStore) {
+    func configure(
+        items: [ClipboardHistoryItem],
+        store: ClipboardHistoryStore,
+        onToggleDeletion: @escaping (String) -> Void,
+        onEdit: @escaping (ClipboardHistoryItem, CGPoint) -> Void
+    ) {
         cardViews.forEach { $0.removeFromSuperview() }
         cardViews = items.map { item in
-            ClipboardCardView(item: item, store: store)
+            let card = ClipboardCardView(item: item, store: store)
+            card.onToggleDeletion = { onToggleDeletion(item.id) }
+            card.onEdit = onEdit
+            return card
         }
         cardViews.forEach(addSubview)
         needsLayout = true
+    }
+
+    func setDeletionState(isActive: Bool, selectedIDs: Set<String>) {
+        cardViews.forEach { card in
+            card.setDeletionState(isActive: isActive, isSelected: selectedIDs.contains(card.itemID))
+        }
     }
 
     override func layout() {
@@ -377,14 +506,19 @@ final class ClipboardCardStripView: NSView {
     override var isFlipped: Bool { true }
 }
 
-final class ClipboardCardView: NSView, NSTextFieldDelegate {
+final class ClipboardCardView: NSView {
     private let item: ClipboardHistoryItem
     private let store: ClipboardHistoryStore
     private let previewButton = ClipboardPreviewButton()
     private let pinButton: DockSymbolButton
+    private let editButton = DockSymbolButton(symbolName: "pencil", tooltip: "编辑完整内容")
     private var isHovering = false
-    private var editField: NSTextField?
-    private var pendingSingleClick: DispatchWorkItem?
+    private var isCopied = false
+    private var isDeletionMode = false
+    private var isSelectedForDeletion = false
+    var onToggleDeletion: (() -> Void)?
+    var onEdit: ((ClipboardHistoryItem, CGPoint) -> Void)?
+    var itemID: String { item.id }
 
     init(item: ClipboardHistoryItem, store: ClipboardHistoryStore) {
         self.item = item
@@ -392,7 +526,12 @@ final class ClipboardCardView: NSView, NSTextFieldDelegate {
         self.pinButton = DockSymbolButton(symbolName: item.isPinned ? "pin.fill" : "pin", tooltip: item.isPinned ? "取消固定" : "固定到前面")
         super.init(frame: .zero)
         wantsLayer = true
-        toolTip = "单击复制并收起，双击编辑，右键删除"
+        toolTip = "单击立即复制并收起，编辑请使用按钮或右键菜单"
+        setAccessibilityElement(true)
+        setAccessibilityRole(.button)
+        setAccessibilityLabel("复制\(item.kind.categoryTitle)：\(item.cardPreviewText(maxCharacters: 48))")
+        setAccessibilityHelp("单击立即复制；删除模式下切换选择")
+        setAccessibilityIdentifier("clipboard-card-\(item.id)")
         pinButton.target = self
         pinButton.action = #selector(togglePinned)
         pinButton.contentTintColor = item.isPinned ? .systemOrange : .secondaryLabelColor
@@ -400,6 +539,11 @@ final class ClipboardCardView: NSView, NSTextFieldDelegate {
         previewButton.target = self
         previewButton.action = #selector(previewItem)
         addSubview(previewButton)
+        if item.kind != .image {
+            editButton.target = self
+            editButton.action = #selector(requestEdit)
+            addSubview(editButton)
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -416,7 +560,7 @@ final class ClipboardCardView: NSView, NSTextFieldDelegate {
         super.layout()
         previewButton.frame = CGRect(x: bounds.width - 56, y: 8, width: 44, height: 22)
         pinButton.frame = CGRect(x: bounds.width - 86, y: 8, width: 22, height: 22)
-        editField?.frame = bounds.insetBy(dx: 10, dy: 10)
+        editButton.frame = CGRect(x: bounds.width - 116, y: 8, width: 22, height: 22)
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -434,62 +578,60 @@ final class ClipboardCardView: NSView, NSTextFieldDelegate {
     }
 
     override func mouseDown(with event: NSEvent) {
-        guard editField == nil else { return }
-        if event.clickCount >= 2 {
-            pendingSingleClick?.cancel()
-            pendingSingleClick = nil
-            beginEditingIfPossible()
+        if isDeletionMode {
+            onToggleDeletion?()
             return
         }
-        // A double-click arrives as a second mouseDown with clickCount == 2, so delay
-        // the single-click action long enough for that second click to cancel it —
-        // otherwise the dock would already be closed before the double-click lands.
-        let workItem = DispatchWorkItem { [weak self] in self?.performCopyAndClose() }
-        pendingSingleClick = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: workItem)
+        performCopyAndClose()
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        if isDeletionMode {
+            onToggleDeletion?()
+        } else {
+            performCopyAndClose()
+        }
+        return true
+    }
+
+    func setDeletionState(isActive: Bool, isSelected: Bool) {
+        isDeletionMode = isActive
+        isSelectedForDeletion = isSelected
+        previewButton.isHidden = isActive
+        pinButton.isHidden = isActive
+        editButton.isHidden = isActive
+        needsDisplay = true
     }
 
     private func performCopyAndClose() {
+        isCopied = true
+        needsDisplay = true
+        displayIfNeeded()
         store.restore(item)
-        Toast.show("复制成功，已放回系统剪贴板：\(item.detail)")
+        ClipboardDockFeedback.show(
+            message: "已复制 · \(item.kind.categoryTitle)",
+            tone: .success,
+            anchor: feedbackAnchor
+        )
         (window as? ClipboardDockWindow)?.hideDock()
     }
 
-    private func beginEditingIfPossible() {
-        guard item.kind != .image else {
-            ClipboardPreviewWindow.show(item: item, image: store.image(for: item))
-            return
-        }
-        let field = NSTextField(frame: bounds.insetBy(dx: 10, dy: 10))
-        field.stringValue = item.preview
-        field.font = .systemFont(ofSize: 12, weight: .medium)
-        field.isBordered = true
-        field.bezelStyle = .roundedBezel
-        field.delegate = self
-        field.target = self
-        field.action = #selector(commitEdit(_:))
-        addSubview(field)
-        editField = field
-        window?.makeFirstResponder(field)
-    }
-
-    func controlTextDidEndEditing(_ obj: Notification) {
-        commitEdit(editField)
-    }
-
-    @objc private func commitEdit(_ sender: NSTextField?) {
-        guard let field = sender ?? editField else { return }
-        let text = field.stringValue
-        field.removeFromSuperview()
-        editField = nil
-        if text != item.preview {
-            store.update(item, newText: text)
-            Toast.show("已自动保存")
-        }
+    private var feedbackAnchor: CGPoint {
+        guard let window else { return NSEvent.mouseLocation }
+        let rectInWindow = convert(bounds, to: nil)
+        let rectOnScreen = window.convertToScreen(rectInWindow)
+        return CGPoint(x: rectOnScreen.midX, y: rectOnScreen.maxY)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
+        guard !isDeletionMode else { return nil }
         let menu = NSMenu()
+        if item.kind != .image {
+            let editItem = NSMenuItem(title: "编辑内容", action: #selector(requestEdit), keyEquivalent: "")
+            editItem.target = self
+            menu.addItem(editItem)
+            menu.addItem(.separator())
+        }
         let deleteItem = NSMenuItem(title: "删除这条历史", action: #selector(deleteItem), keyEquivalent: "")
         deleteItem.target = self
         menu.addItem(deleteItem)
@@ -499,11 +641,30 @@ final class ClipboardCardView: NSView, NSTextFieldDelegate {
     override func draw(_ dirtyRect: NSRect) {
         let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
         let path = NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10)
-        (isHovering ? NSColor.white.withAlphaComponent(0.40) : NSColor.white.withAlphaComponent(0.28)).setFill()
+        let fillColor: NSColor
+        let strokeColor: NSColor
+        if isSelectedForDeletion {
+            fillColor = NSColor.systemRed.withAlphaComponent(0.30)
+            strokeColor = NSColor.systemRed.withAlphaComponent(0.95)
+        } else if isCopied {
+            fillColor = NSColor.systemGreen.withAlphaComponent(0.34)
+            strokeColor = NSColor.systemGreen.withAlphaComponent(0.95)
+        } else if isHovering {
+            fillColor = NSColor.systemBlue.withAlphaComponent(0.30)
+            strokeColor = NSColor.systemBlue.withAlphaComponent(0.92)
+        } else {
+            fillColor = NSColor.white.withAlphaComponent(0.28)
+            strokeColor = NSColor.white.withAlphaComponent(0.38)
+        }
+        fillColor.setFill()
         path.fill()
-        NSColor.white.withAlphaComponent(isHovering ? 0.64 : 0.38).setStroke()
+        strokeColor.setStroke()
         path.lineWidth = 1
         path.stroke()
+
+        if isDeletionMode {
+            drawDeletionSelectionIndicator()
+        }
 
         drawKindPill()
         switch item.kind {
@@ -518,13 +679,33 @@ final class ClipboardCardView: NSView, NSTextFieldDelegate {
         }
     }
 
+    private func drawDeletionSelectionIndicator() {
+        let circleRect = CGRect(x: bounds.width - 30, y: 10, width: 18, height: 18)
+        let circle = NSBezierPath(ovalIn: circleRect)
+        let color = isSelectedForDeletion ? NSColor.systemRed : NSColor.secondaryLabelColor
+        color.setStroke()
+        circle.lineWidth = 1.8
+        circle.stroke()
+        guard isSelectedForDeletion else { return }
+        NSColor.systemRed.setFill()
+        circle.fill()
+        NSColor.white.setStroke()
+        let check = NSBezierPath()
+        check.lineWidth = 1.8
+        check.lineCapStyle = .round
+        check.move(to: CGPoint(x: circleRect.minX + 4, y: circleRect.midY))
+        check.line(to: CGPoint(x: circleRect.minX + 8, y: circleRect.minY + 5))
+        check.line(to: CGPoint(x: circleRect.maxX - 3, y: circleRect.maxY - 5))
+        check.stroke()
+    }
+
     private func drawKindPill() {
         let label = "\(item.kind.categoryTitle) · \(item.relativeTimeText)"
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 10, weight: .medium),
             .foregroundColor: NSColor.secondaryLabelColor
         ]
-        NSString(string: label).draw(in: CGRect(x: 12, y: 11, width: bounds.width - 104, height: 14), withAttributes: attrs)
+        NSString(string: label).draw(in: CGRect(x: 12, y: 11, width: bounds.width - 134, height: 14), withAttributes: attrs)
     }
 
     private func drawTextCard(accent: NSColor) {
@@ -536,7 +717,7 @@ final class ClipboardCardView: NSView, NSTextFieldDelegate {
             .foregroundColor: accent,
             .paragraphStyle: paragraph
         ]
-        NSString(string: item.preview).draw(in: CGRect(x: 12, y: 33, width: bounds.width - 24, height: 52), withAttributes: attrs)
+        NSString(string: item.cardPreviewText()).draw(in: CGRect(x: 12, y: 33, width: bounds.width - 24, height: 52), withAttributes: attrs)
     }
 
     private func drawImageCard() {
@@ -574,14 +755,23 @@ final class ClipboardCardView: NSView, NSTextFieldDelegate {
         ClipboardPreviewWindow.show(item: item, image: store.image(for: item))
     }
 
+    @objc private func requestEdit() {
+        guard item.kind != .image else { return }
+        onEdit?(item, feedbackAnchor)
+    }
+
     @objc private func togglePinned() {
         store.togglePinned(item)
-        Toast.show(item.isPinned ? "已取消固定" : "已固定到剪贴板前面")
+        ClipboardDockFeedback.show(
+            message: item.isPinned ? "已取消固定" : "已固定到前面",
+            tone: .info,
+            anchor: feedbackAnchor
+        )
     }
 
     @objc private func deleteItem() {
         store.delete(item)
-        Toast.show("已删除这条剪贴板历史")
+        ClipboardDockFeedback.show(message: "已删除 · 1 项", tone: .destructive, anchor: feedbackAnchor)
     }
 }
 

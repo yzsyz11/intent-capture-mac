@@ -11,6 +11,7 @@ HOTKEY_RECORDER="$ROOT/Sources/HotkeyRecorder.swift"
 GLOBAL_HOTKEY="$ROOT/Sources/GlobalHotkey.swift"
 CLIPBOARD_STORE="$ROOT/Sources/ClipboardHistoryStore.swift"
 CLIPBOARD_DOCK="$ROOT/Sources/ClipboardDockWindow.swift"
+CLIPBOARD_EDITOR="$ROOT/Sources/ClipboardDockEditorPanel.swift"
 APP_DELEGATE="$ROOT/Sources/AppDelegate.swift"
 MOUSE_MONITOR="$ROOT/Sources/MouseEventMonitor.swift"
 
@@ -114,20 +115,50 @@ require_pattern "material = \\.underWindowBackground" "$CLIPBOARD_DOCK" \
 require_pattern "ClipboardPreviewButton" "$CLIPBOARD_DOCK" \
   "clipboard cards must expose a visible preview button"
 
-require_pattern "复制成功，已放回系统剪贴板" "$CLIPBOARD_DOCK" \
-  "copy success feedback must be explicit"
+require_pattern "已复制 ·" "$CLIPBOARD_DOCK" \
+  "clipboard copy feedback must state success next to the dock"
 
 require_pattern "func performCopyAndClose\\(\\)" "$CLIPBOARD_DOCK" \
   "a single click on a card must copy the item and dismiss the dock"
 
+require_pattern "setAccessibilityRole\\(\.button\\)" "$CLIPBOARD_DOCK" \
+  "clipboard card bodies must be exposed as actionable accessibility buttons"
+
+require_pattern "accessibilityPerformPress" "$CLIPBOARD_DOCK" \
+  "an accessibility press must use the same copy or selection path as a mouse click"
+
+reject_pattern "NSEvent\\.doubleClickInterval" "$CLIPBOARD_DOCK" \
+  "card copying must not wait for the system double-click interval"
+
+reject_pattern "pendingSingleClick|DispatchWorkItem" "$CLIPBOARD_DOCK" \
+  "card copying must not be deferred through a pending work item"
+
+require_pattern "ClipboardDockFeedback\\.show" "$CLIPBOARD_DOCK" \
+  "clipboard actions must use feedback positioned near the dock"
+
 require_pattern "hideDock\\(\\)" "$CLIPBOARD_DOCK" \
   "the copy-on-click path must be able to dismiss the dock"
 
-require_pattern "func beginEditingIfPossible\\(\\)" "$CLIPBOARD_DOCK" \
-  "a double click on a card must enter inline edit mode"
+reject_pattern "editField|beginEditingIfPossible|commitEdit" "$CLIPBOARD_DOCK" \
+  "clipboard editing must not use a card-sized inline text field"
 
-require_pattern "func commitEdit\\(_ sender: NSTextField\\?\\)" "$CLIPBOARD_DOCK" \
-  "editing a card must auto-save on commit"
+require_pattern "编辑内容" "$CLIPBOARD_DOCK" \
+  "clipboard cards must expose an explicit full-content edit action"
+
+require_pattern "NSTextView" "$CLIPBOARD_EDITOR" \
+  "clipboard editing must use a multi-line text view"
+
+require_pattern "NSScrollView" "$CLIPBOARD_EDITOR" \
+  "long clipboard text must remain scrollable while editing"
+
+require_pattern "saveEditing|cancelEditing" "$CLIPBOARD_EDITOR" \
+  "the full editor must provide explicit save and cancel actions"
+
+require_pattern "modifierFlags.*command" "$CLIPBOARD_EDITOR" \
+  "Command-Return must save clipboard edits"
+
+require_pattern "DispatchQueue\.main\.async" "$CLIPBOARD_EDITOR" \
+  "closing the editor must wait until the key event ends so Escape does not also close the dock"
 
 require_pattern "store\\.update\\(item, newText: text\\)" "$CLIPBOARD_DOCK" \
   "editing a card must persist the change back into the history store"
@@ -154,7 +185,16 @@ require_pattern "func togglePinned\\(_ item: ClipboardHistoryItem\\)" "$CLIPBOAR
   "clipboard history store must support toggling a single pinned item"
 
 require_pattern 'items\.removeAll \{ !\$0\.isPinned \}' "$CLIPBOARD_STORE" \
-  "clearing clipboard history must preserve pinned items"
+  "the store-level clear operation must preserve pinned items"
+
+require_pattern "enterDeletionMode" "$CLIPBOARD_DOCK" \
+  "the dock trash button must enter selection mode instead of clearing immediately"
+
+require_pattern "confirmDeletion" "$CLIPBOARD_DOCK" \
+  "selected clipboard cards must require an explicit delete confirmation"
+
+require_pattern "store\.delete\(ids:" "$CLIPBOARD_DOCK" \
+  "delete confirmation must use one batch store mutation"
 
 require_pattern "sortedPinnedFirst" "$CLIPBOARD_STORE" \
   "clipboard history must keep pinned items before normal history"
@@ -224,5 +264,22 @@ require_pattern "categoryTitle" "$CLIPBOARD_DOCK" \
 
 reject_pattern "DockTextButton\\(title: \"清空\"" "$CLIPBOARD_DOCK" \
   "clipboard dock should not use a prominent text clear button in the top-right icon group"
+
+TEST_BUILD_DIR="$(mktemp -d)"
+trap 'rm -rf "$TEST_BUILD_DIR"' EXIT
+xcrun swiftc \
+  "$CLIPBOARD_STORE" \
+  "$ROOT/Tests/ToastStub.swift" \
+  "$ROOT/Tests/ClipboardCardPreviewTests.swift" \
+  -o "$TEST_BUILD_DIR/ClipboardCardPreviewTests"
+"$TEST_BUILD_DIR/ClipboardCardPreviewTests"
+
+xcrun swiftc \
+  "$CLIPBOARD_STORE" \
+  "$ROOT/Sources/ClipboardDockSelectionState.swift" \
+  "$ROOT/Tests/ToastStub.swift" \
+  "$ROOT/Tests/ClipboardDockSelectionTests.swift" \
+  -o "$TEST_BUILD_DIR/ClipboardDockSelectionTests"
+"$TEST_BUILD_DIR/ClipboardDockSelectionTests"
 
 echo "regression checks passed."
