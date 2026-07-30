@@ -90,6 +90,11 @@ struct ClipboardHistoryItem: Codable, Equatable {
         try container.encode(isPinned, forKey: .isPinned)
         try container.encodeIfPresent(pinnedAt, forKey: .pinnedAt)
     }
+
+    func cardPreviewText(maxCharacters: Int = 240) -> String {
+        guard preview.count > maxCharacters else { return preview }
+        return String(preview.prefix(maxCharacters)) + "…"
+    }
 }
 
 final class ClipboardHistoryStore {
@@ -100,6 +105,7 @@ final class ClipboardHistoryStore {
     private let rootDirectory: URL
     private let imagesDirectory: URL
     private let indexURL: URL
+    private let imageCache = NSCache<NSString, NSImage>()
     private var timer: Timer?
     private var lastChangeCount = NSPasteboard.general.changeCount
 
@@ -143,6 +149,7 @@ final class ClipboardHistoryStore {
         let removed = items.filter { !$0.isPinned }
         removed.compactMap(\.imageFilename).forEach { filename in
             try? fileManager.removeItem(at: imagesDirectory.appendingPathComponent(filename))
+            imageCache.removeObject(forKey: filename as NSString)
         }
         items.removeAll { !$0.isPinned }
         save()
@@ -153,6 +160,20 @@ final class ClipboardHistoryStore {
         items.removeAll { $0.id == item.id }
         if let filename = item.imageFilename {
             try? fileManager.removeItem(at: imagesDirectory.appendingPathComponent(filename))
+            imageCache.removeObject(forKey: filename as NSString)
+        }
+        save()
+        onChange?(items)
+    }
+
+    func delete(ids: Set<String>) {
+        guard !ids.isEmpty else { return }
+        let removed = items.filter { ids.contains($0.id) }
+        guard !removed.isEmpty else { return }
+        items.removeAll { ids.contains($0.id) }
+        removed.compactMap(\.imageFilename).forEach { filename in
+            try? fileManager.removeItem(at: imagesDirectory.appendingPathComponent(filename))
+            imageCache.removeObject(forKey: filename as NSString)
         }
         save()
         onChange?(items)
@@ -223,7 +244,11 @@ final class ClipboardHistoryStore {
 
     func image(for item: ClipboardHistoryItem) -> NSImage? {
         guard let filename = item.imageFilename else { return nil }
-        return NSImage(contentsOf: imagesDirectory.appendingPathComponent(filename))
+        let key = filename as NSString
+        if let cached = imageCache.object(forKey: key) { return cached }
+        guard let image = NSImage(contentsOf: imagesDirectory.appendingPathComponent(filename)) else { return nil }
+        imageCache.setObject(image, forKey: key)
+        return image
     }
 
     private func add(_ item: ClipboardHistoryItem) {
@@ -236,6 +261,7 @@ final class ClipboardHistoryStore {
             .filter { $0 != item.imageFilename }
             .forEach { filename in
                 try? fileManager.removeItem(at: imagesDirectory.appendingPathComponent(filename))
+                imageCache.removeObject(forKey: filename as NSString)
             }
         items.insert(ClipboardHistoryItem(
             id: existingPinned?.id ?? item.id,
@@ -284,6 +310,7 @@ final class ClipboardHistoryStore {
 
         removed.compactMap(\.imageFilename).forEach { filename in
             try? fileManager.removeItem(at: imagesDirectory.appendingPathComponent(filename))
+            imageCache.removeObject(forKey: filename as NSString)
         }
         items = trimmed
     }
