@@ -615,6 +615,32 @@ final class AppearanceSectionView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    // NSColorWell 被点过后会一直处于 active 状态并绑定系统颜色面板，即使关掉设置窗也不解绑；
+    // 之后任何一次 NSApp.activate（例如打开图片预览）都会把系统颜色面板重新带到前台。
+    // 因此在设置窗关闭时主动解绑并收起颜色面板。
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        NotificationCenter.default.removeObserver(self, name: NSWindow.willCloseNotification, object: nil)
+        guard let window else { return }
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(settingsWindowWillClose),
+            name: NSWindow.willCloseNotification,
+            object: window
+        )
+    }
+
+    @objc private func settingsWindowWillClose() {
+        colorWell.deactivate()
+        if NSColorPanel.sharedColorPanelExists, NSColorPanel.shared.isVisible {
+            NSColorPanel.shared.orderOut(nil)
+        }
+    }
+
     @objc private func pickPreset(_ sender: AccentSwatchButton) {
         settings.accentHex = sender.hex
         colorWell.color = settings.accentColor
