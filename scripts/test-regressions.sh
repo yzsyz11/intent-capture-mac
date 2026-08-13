@@ -100,7 +100,7 @@ require_pattern "addGlobalMonitorForEvents\\(matching: mask\\)" "$MOUSE_MONITOR"
 require_pattern "addLocalMonitorForEvents\\(matching: mask\\)" "$MOUSE_MONITOR" \
   "middle-click listening must also work while Intent Capture is active"
 
-require_pattern "guard let downAt = middleDownAt else \\{ return \\}" "$MOUSE_MONITOR" \
+require_pattern "let wasDown = self\\.isMiddleDown" "$MOUSE_MONITOR" \
   "middle-click CGEvent and NSEvent paths must deduplicate the same mouse-up event"
 
 reject_pattern "windowBackgroundColor\\.withAlphaComponent\\(0\\.42\\)" "$CLIPBOARD_DOCK" \

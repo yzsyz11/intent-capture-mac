@@ -20,6 +20,7 @@ SOURCES=(
   "$ROOT/Sources/ClipboardDockEditorPanel.swift"
   "$ROOT/Sources/CaptureService.swift"
   "$ROOT/Sources/RegionSelectionWindow.swift"
+  "$ROOT/Sources/RadialMenuWindow.swift"
   "$ROOT/Sources/HomeWindow.swift"
   "$ROOT/Sources/ClipboardDockWindow.swift"
   "$ROOT/Sources/AppDelegate.swift"
