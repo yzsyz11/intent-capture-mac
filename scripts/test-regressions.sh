@@ -100,6 +100,9 @@ require_pattern "app\\.setActivationPolicy\\(\\.accessory\\)" "$MAIN_SWIFT" \
 reject_pattern "setActivationPolicy\\(\\.regular\\)" "$APP_DELEGATE" \
   "middle-click, hotkey, and status-bar actions must not add the app back to the Dock"
 
+require_pattern "if !settings\\.hasLaunchedBefore \\{" "$APP_DELEGATE" \
+  "launch must only auto-show the home window on first run, then stay silent in the menu bar"
+
 require_pattern "addGlobalMonitorForEvents\\(matching: mask\\)" "$MOUSE_MONITOR" \
   "middle-click listening must have an NSEvent global fallback when the CGEvent tap is unreliable"
 

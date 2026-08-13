@@ -65,6 +65,12 @@ final class AppSettings {
         set { defaults.set(newValue, forKey: "clipboardHistoryEnabled") }
     }
 
+    /// 是否已完成首次启动引导；首启弹主页引导，之后常驻菜单栏静默，不再主动弹窗。
+    var hasLaunchedBefore: Bool {
+        get { defaults.bool(forKey: "hasLaunchedBefore") }
+        set { defaults.set(newValue, forKey: "hasLaunchedBefore") }
+    }
+
     /// 全局主题强调色（十六进制），应用于侧边栏高亮、按钮描边与中键轮盘。
     static let defaultAccentHex = "#2EA6C7"
 

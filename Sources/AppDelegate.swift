@@ -19,7 +19,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHotkeys()
         startClipboardHistory()
         startMouseMonitor()
-        showHome()
+        // 仅首次启动弹主页引导；之后常驻菜单栏静默，避免开机自启时打扰用户。
+        if !settings.hasLaunchedBefore {
+            settings.hasLaunchedBefore = true
+            showHome()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
