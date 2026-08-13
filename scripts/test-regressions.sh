@@ -226,6 +226,12 @@ require_pattern "height: CGFloat = 182" "$CLIPBOARD_DOCK" \
 require_pattern "DockSymbolButton\\(symbolName: \"magnifyingglass\"" "$CLIPBOARD_DOCK" \
   "clipboard dock should use right-aligned icon controls like the UI reference"
 
+require_pattern "private func filteredItems\\(\\)" "$CLIPBOARD_DOCK" \
+  "clipboard dock must filter history by search query and kind before rendering cards"
+
+require_pattern "NSSegmentedControl\\(" "$CLIPBOARD_DOCK" \
+  "clipboard dock must expose a content-kind filter control"
+
 require_pattern "final class ScrollIndicatorView: NSView" "$CLIPBOARD_DOCK" \
   "clipboard dock should draw a bottom horizontal scroll indicator"
 

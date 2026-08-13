@@ -133,7 +133,7 @@ final class ClipboardDockWindow: NSPanel {
     }
 }
 
-final class ClipboardDockView: NSView {
+final class ClipboardDockView: NSView, NSSearchFieldDelegate {
     private let store: ClipboardHistoryStore
     private let effectView = NSVisualEffectView()
     private let scrollView = HorizontalWheelScrollView()
@@ -149,7 +149,17 @@ final class ClipboardDockView: NSView {
     private let selectAllButton = DockTextButton(title: "全选", target: nil, action: nil)
     private let cancelDeleteButton = DockTextButton(title: "取消", target: nil, action: nil)
     private let confirmDeleteButton = DockTextButton(title: "删除（0）", target: nil, action: nil)
+    private let searchField = NSSearchField()
+    private let filterControl = NSSegmentedControl(
+        labels: ["全部", "文字", "图片", "链接", "颜色"],
+        trackingMode: .selectOne,
+        target: nil,
+        action: nil
+    )
     private var selectionState = ClipboardDockSelectionState()
+    private var isSearching = false
+    private var searchQuery = ""
+    private var activeKindFilter: ClipboardHistoryKind?
 
     init(store: ClipboardHistoryStore) {
         self.store = store
@@ -164,23 +174,91 @@ final class ClipboardDockView: NSView {
     }
 
     func reload() {
+        let items = filteredItems()
         stripView.configure(
-            items: store.items,
+            items: items,
             store: store,
             onToggleDeletion: { [weak self] id in self?.toggleDeletionSelection(id: id) },
             onEdit: { [weak self] item, anchor in self?.requestEdit(item: item, anchor: anchor) }
         )
         stripView.setDeletionState(isActive: selectionState.isActive, selectedIDs: selectionState.selectedIDs)
-        emptyLabel.isHidden = !store.items.isEmpty
+        if store.items.isEmpty {
+            emptyLabel.stringValue = "复制文字、截图或色值后，会出现在这里"
+            emptyLabel.isHidden = false
+        } else if items.isEmpty {
+            emptyLabel.stringValue = "没有匹配的剪贴内容"
+            emptyLabel.isHidden = false
+        } else {
+            emptyLabel.isHidden = true
+        }
         needsDisplay = true
         indicatorView.refresh()
         updateDeletionControls()
     }
 
+    // 按搜索词（匹配 preview / detail）与类型联合过滤；空条件返回全部。
+    private func filteredItems() -> [ClipboardHistoryItem] {
+        var items = store.items
+        if let kind = activeKindFilter {
+            items = items.filter { $0.kind == kind }
+        }
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !query.isEmpty {
+            items = items.filter {
+                $0.preview.lowercased().contains(query) || $0.detail.lowercased().contains(query)
+            }
+        }
+        return items
+    }
+
     func handleEscape() -> Bool {
-        guard selectionState.isActive else { return false }
-        cancelDeletionMode()
-        return true
+        if selectionState.isActive {
+            cancelDeletionMode()
+            return true
+        }
+        if isSearching {
+            exitSearch()
+            return true
+        }
+        return false
+    }
+
+    @objc private func toggleSearch() {
+        if isSearching {
+            exitSearch()
+        } else {
+            isSearching = true
+            refreshHeaderChrome()
+            window?.makeFirstResponder(searchField)
+        }
+    }
+
+    private func exitSearch() {
+        isSearching = false
+        searchQuery = ""
+        searchField.stringValue = ""
+        activeKindFilter = nil
+        filterControl.selectedSegment = 0
+        window?.makeFirstResponder(nil)
+        refreshHeaderChrome()
+        reload()
+    }
+
+    @objc private func filterChanged() {
+        switch filterControl.selectedSegment {
+        case 1: activeKindFilter = .text
+        case 2: activeKindFilter = .image
+        case 3: activeKindFilter = .link
+        case 4: activeKindFilter = .color
+        default: activeKindFilter = nil
+        }
+        reload()
+    }
+
+    func controlTextDidChange(_ obj: Notification) {
+        guard (obj.object as? NSSearchField) === searchField else { return }
+        searchQuery = searchField.stringValue
+        reload()
     }
 
     override func layout() {
@@ -195,6 +273,8 @@ final class ClipboardDockView: NSView {
         confirmDeleteButton.frame = CGRect(x: bounds.width - 112, y: bounds.height - 41, width: 92, height: 26)
         cancelDeleteButton.frame = CGRect(x: bounds.width - 174, y: bounds.height - 41, width: 54, height: 26)
         selectAllButton.frame = CGRect(x: bounds.width - 236, y: bounds.height - 41, width: 54, height: 26)
+        searchField.frame = CGRect(x: 24, y: bounds.height - 40, width: 220, height: 26)
+        filterControl.frame = CGRect(x: 254, y: bounds.height - 40, width: 280, height: 26)
         scrollView.frame = CGRect(x: 20, y: 25, width: bounds.width - 40, height: 108)
         emptyLabel.frame = CGRect(x: 24, y: 70, width: bounds.width - 48, height: 24)
         indicatorView.frame = CGRect(x: bounds.midX - 90, y: 16, width: 180, height: 4)
@@ -246,8 +326,24 @@ final class ClipboardDockView: NSView {
         settingsButton.autoresizingMask = [.minXMargin, .minYMargin]
         addSubview(settingsButton)
 
+        searchButton.target = self
+        searchButton.action = #selector(toggleSearch)
         searchButton.autoresizingMask = [.minXMargin, .minYMargin]
         addSubview(searchButton)
+
+        searchField.isHidden = true
+        searchField.placeholderString = "搜索剪贴内容"
+        searchField.delegate = self
+        searchField.sendsWholeSearchString = false
+        searchField.focusRingType = .none
+        addSubview(searchField)
+
+        filterControl.isHidden = true
+        filterControl.selectedSegment = 0
+        filterControl.segmentDistribution = .fillEqually
+        filterControl.target = self
+        filterControl.action = #selector(filterChanged)
+        addSubview(filterControl)
 
         clearButton.target = self
         clearButton.action = #selector(enterDeletionMode)
@@ -294,7 +390,8 @@ final class ClipboardDockView: NSView {
     }
 
     @objc private func selectAllForDeletion() {
-        selectionState.selectAll(ids: store.items.map(\.id))
+        // 若正在筛选，只全选当前可见（已过滤）的卡片。
+        selectionState.selectAll(ids: filteredItems().map(\.id))
         updateDeletionControls()
     }
 
@@ -327,6 +424,21 @@ final class ClipboardDockView: NSView {
 
     private func updateDeletionControls() {
         let isDeleting = selectionState.isActive
+        refreshHeaderChrome()
+        confirmDeleteButton.title = "删除（\(selectionState.selectedIDs.count)）"
+        confirmDeleteButton.isEnabled = !selectionState.selectedIDs.isEmpty
+        subtitle.stringValue = isDeleting ? "选择要删除的卡片，确认后才会删除" : "⌘D 呼出 / 鼠标横向滚动"
+        stripView.setDeletionState(isActive: isDeleting, selectedIDs: selectionState.selectedIDs)
+    }
+
+    // 统一管理头部控件可见性：删除模式与搜索模式互斥，删除时优先。
+    private func refreshHeaderChrome() {
+        let isDeleting = selectionState.isActive
+        let searching = isSearching && !isDeleting
+        title.isHidden = searching
+        subtitle.isHidden = searching
+        searchField.isHidden = !searching
+        filterControl.isHidden = !searching
         searchButton.isHidden = isDeleting
         settingsButton.isHidden = isDeleting
         closeButton.isHidden = isDeleting
@@ -334,10 +446,6 @@ final class ClipboardDockView: NSView {
         selectAllButton.isHidden = !isDeleting
         cancelDeleteButton.isHidden = !isDeleting
         confirmDeleteButton.isHidden = !isDeleting
-        confirmDeleteButton.title = "删除（\(selectionState.selectedIDs.count)）"
-        confirmDeleteButton.isEnabled = !selectionState.selectedIDs.isEmpty
-        subtitle.stringValue = isDeleting ? "选择要删除的卡片，确认后才会删除" : "⌘D 呼出 / 鼠标横向滚动"
-        stripView.setDeletionState(isActive: isDeleting, selectedIDs: selectionState.selectedIDs)
     }
 
     private func drawContentBand() {
