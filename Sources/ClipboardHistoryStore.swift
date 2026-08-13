@@ -108,6 +108,11 @@ final class ClipboardHistoryStore {
     private let imageCache = NSCache<NSString, NSImage>()
     private var timer: Timer?
     private var lastChangeCount = NSPasteboard.general.changeCount
+    // 所有磁盘 IO（index.json 与 PNG 写盘）都排到这条串行后台队列，主线程只维护内存 items。
+    private let ioQueue = DispatchQueue(label: "com.intentcapture.clipboardhistory.io", qos: .utility)
+    // 连续操作时的写盘去抖：只保留最后一次，300ms 内合并。
+    private var pendingSave: DispatchWorkItem?
+    private let saveDebounce: TimeInterval = 0.3
 
     private(set) var items: [ClipboardHistoryItem] = []
     var onChange: (([ClipboardHistoryItem]) -> Void)?
@@ -347,25 +352,22 @@ final class ClipboardHistoryStore {
             return nil
         }
 
-        do {
-            try fileManager.createDirectory(at: imagesDirectory, withIntermediateDirectories: true)
-            let filename = "\(UUID().uuidString).png"
-            try pngData.write(to: imagesDirectory.appendingPathComponent(filename))
-            let pixelSize = image.pixelSize
-            return ClipboardHistoryItem(
-                id: UUID().uuidString,
-                kind: .image,
-                createdAt: Date(),
-                preview: "图片",
-                detail: "\(Int(pixelSize.width))x\(Int(pixelSize.height))",
-                fingerprint: "image:\(pngData.count):\(Int(pixelSize.width))x\(Int(pixelSize.height))",
-                imageFilename: filename,
-                imageWidth: Int(pixelSize.width),
-                imageHeight: Int(pixelSize.height)
-            )
-        } catch {
-            return nil
-        }
+        let filename = "\(UUID().uuidString).png"
+        let pixelSize = image.pixelSize
+        // 立即缓存，卡片渲染无需等磁盘；PNG 编码已在主线程完成（指纹需要字节数），实际写盘排到后台队列。
+        imageCache.setObject(image, forKey: filename as NSString)
+        writeImageAsync(pngData, filename: filename)
+        return ClipboardHistoryItem(
+            id: UUID().uuidString,
+            kind: .image,
+            createdAt: Date(),
+            preview: "图片",
+            detail: "\(Int(pixelSize.width))x\(Int(pixelSize.height))",
+            fingerprint: "image:\(pngData.count):\(Int(pixelSize.width))x\(Int(pixelSize.height))",
+            imageFilename: filename,
+            imageWidth: Int(pixelSize.width),
+            imageHeight: Int(pixelSize.height)
+        )
     }
 
     private func load() {
@@ -377,14 +379,49 @@ final class ClipboardHistoryStore {
         }
     }
 
+    // 去抖 + 后台写盘：在主线程对 items 取值快照，取消上一次挂起的写盘，300ms 后到后台串行落盘。
     private func save() {
+        pendingSave?.cancel()
+        let snapshot = items
+        let work = DispatchWorkItem { [weak self] in
+            self?.writeIndex(snapshot)
+        }
+        pendingSave = work
+        ioQueue.asyncAfter(deadline: .now() + saveDebounce, execute: work)
+    }
+
+    private func writeIndex(_ snapshot: [ClipboardHistoryItem]) {
         do {
             try fileManager.createDirectory(at: rootDirectory, withIntermediateDirectories: true)
-            let data = try JSONEncoder().encode(items)
+            let data = try JSONEncoder().encode(snapshot)
             try data.write(to: indexURL, options: .atomic)
         } catch {
-            Toast.show("剪贴板历史保存失败：\(error.localizedDescription)")
+            DispatchQueue.main.async {
+                Toast.show("剪贴板历史保存失败：\(error.localizedDescription)")
+            }
         }
+    }
+
+    private func writeImageAsync(_ data: Data, filename: String) {
+        ioQueue.async { [weak self] in
+            guard let self else { return }
+            do {
+                try self.fileManager.createDirectory(at: self.imagesDirectory, withIntermediateDirectories: true)
+                try data.write(to: self.imagesDirectory.appendingPathComponent(filename))
+            } catch {
+                DispatchQueue.main.async {
+                    Toast.show("截图写入失败：\(error.localizedDescription)")
+                }
+            }
+        }
+    }
+
+    /// 退出前强制同步刷盘，避免去抖窗口内的最后一次改动丢失。
+    func flush() {
+        pendingSave?.cancel()
+        pendingSave = nil
+        let snapshot = items
+        ioQueue.sync { writeIndex(snapshot) }
     }
 
     private static func kind(for string: String) -> ClipboardHistoryKind {

@@ -58,6 +58,8 @@ struct ClipboardDockSelectionTests {
         try expect(store.items.map(\.id) == ["keep"], "批量删除只能移除显式选中的记录")
         try expect(changeCount == 1, "一次批量删除只能触发一次界面刷新")
 
+        // 写盘已改为 300ms 去抖的后台队列，断言持久化前先同步刷盘。
+        store.flush()
         let savedData = try Data(contentsOf: root.appendingPathComponent("index.json"))
         let saved = try JSONDecoder().decode([ClipboardHistoryItem].self, from: savedData)
         try expect(saved.map(\.id) == ["keep"], "批量删除结果必须一次性持久化")

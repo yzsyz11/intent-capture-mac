@@ -61,6 +61,12 @@ require_pattern "maxItems = 50" "$CLIPBOARD_STORE" \
 require_pattern "NSPasteboard\\.general\\.changeCount" "$CLIPBOARD_STORE" \
   "clipboard history store must track pasteboard changeCount"
 
+require_pattern "func flush\\(\\)" "$CLIPBOARD_STORE" \
+  "clipboard history store must expose a synchronous flush so debounced writes are not lost"
+
+require_pattern "clipboardStore\\.flush\\(\\)" "$APP_DELEGATE" \
+  "app termination must flush pending clipboard writes so the last change survives quit"
+
 require_pattern "NSScrollView" "$CLIPBOARD_DOCK" \
   "clipboard dock must use a horizontal scroll view"
 
