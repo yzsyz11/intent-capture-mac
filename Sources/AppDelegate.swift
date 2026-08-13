@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var homeWindow: HomeWindow?
     private var clipboardDock: ClipboardDockWindow?
+    private var radialMenu: RadialMenuWindow?
     private var middleClickStatus = "中键监听：未启动"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -120,8 +121,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         let started = mouseMonitor.start(
-            onShortPress: { [weak self] in self?.executeRecent() },
-            onLongPress: { [weak self] in self?.showActionPanel() }
+            onShortPress: { [weak self] in self?.cancelRadialMenu(); self?.executeRecent() },
+            onPressBegin: { [weak self] anchor, duration in self?.openRadialMenu(at: anchor, ringDuration: duration) },
+            onMenuOpen: { [weak self] in self?.radialMenu?.bloomIntoWheel() },
+            onMenuUpdate: { [weak self] location in self?.radialMenu?.updateCursor(location) },
+            onMenuCommit: { [weak self] in self?.commitRadialMenu() }
         )
 
         if started {
@@ -154,6 +158,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func executeRecent() {
         captureService.perform(settings.recentAction)
+    }
+
+    private func openRadialMenu(at anchor: CGPoint, ringDuration: TimeInterval) {
+        radialMenu?.close()
+        let menu = RadialMenuWindow(anchor: anchor, actions: CaptureAction.allCases)
+        radialMenu = menu
+        menu.presentProgress(duration: ringDuration)
+    }
+
+    private func cancelRadialMenu() {
+        guard let menu = radialMenu else { return }
+        radialMenu = nil
+        menu.dismiss {}
+    }
+
+    private func commitRadialMenu() {
+        guard let menu = radialMenu else { return }
+        let action = menu.selectedAction()
+        radialMenu = nil
+        // 先收起玻璃圆盘，再执行动作，避免覆盖层被截进图（尤其取色是整屏抓取）。
+        menu.dismiss { [weak self] in
+            guard let self = self, let action = action else { return }
+            self.captureService.perform(action)
+        }
     }
 
     @objc private func executeActionFromMenu(_ sender: NSMenuItem) {

@@ -7,14 +7,31 @@ final class MouseEventMonitor {
     private var runLoopSource: CFRunLoopSource?
     private var globalMouseMonitor: Any?
     private var localMouseMonitor: Any?
-    private var middleDownAt: Date?
+    private var isMiddleDown = false
+    private var menuOpen = false
+    private var pressBeginWorkItem: DispatchWorkItem?
+    private var menuOpenWorkItem: DispatchWorkItem?
     private var onShortPress: (() -> Void)?
-    private var onLongPress: (() -> Void)?
+    private var onPressBegin: ((CGPoint, TimeInterval) -> Void)?
+    private var onMenuOpen: (() -> Void)?
+    private var onMenuUpdate: ((CGPoint) -> Void)?
+    private var onMenuCommit: (() -> Void)?
     private(set) var isRunning = false
 
     private let longPressThreshold: TimeInterval = 0.5
+    private let ringDelay: TimeInterval = 0.12
 
-    func start(onShortPress: @escaping () -> Void, onLongPress: @escaping () -> Void) -> Bool {
+    /// onPressBegin(anchor, duration) 在按住越过短暂延时后触发，用于展示长按进度环，
+    ///   duration 为进度环需要转满的时长；anchor 为全局 AppKit 坐标（中键按下位置）；
+    /// onMenuOpen 在长按阈值达到（仍按住）时触发，进度环绽放成轮盘；
+    /// onMenuUpdate(location) 在轮盘展开后随鼠标移动实时触发；
+    /// onMenuCommit 在轮盘展开状态下松开中键时触发；
+    /// onShortPress 在未达阈值就松开时触发。
+    func start(onShortPress: @escaping () -> Void,
+               onPressBegin: @escaping (CGPoint, TimeInterval) -> Void,
+               onMenuOpen: @escaping () -> Void,
+               onMenuUpdate: @escaping (CGPoint) -> Void,
+               onMenuCommit: @escaping () -> Void) -> Bool {
         stop()
 
         guard Self.isAccessibilityTrusted() else {
@@ -22,10 +39,15 @@ final class MouseEventMonitor {
         }
 
         self.onShortPress = onShortPress
-        self.onLongPress = onLongPress
+        self.onPressBegin = onPressBegin
+        self.onMenuOpen = onMenuOpen
+        self.onMenuUpdate = onMenuUpdate
+        self.onMenuCommit = onMenuCommit
         startNSEventFallbackMonitors()
 
-        let mask = (1 << CGEventType.otherMouseDown.rawValue) | (1 << CGEventType.otherMouseUp.rawValue)
+        let mask = (1 << CGEventType.otherMouseDown.rawValue)
+            | (1 << CGEventType.otherMouseUp.rawValue)
+            | (1 << CGEventType.otherMouseDragged.rawValue)
         let userInfo = Unmanaged.passUnretained(self).toOpaque()
 
         guard let tap = CGEvent.tapCreate(
@@ -84,7 +106,12 @@ final class MouseEventMonitor {
         localMouseMonitor = nil
         runLoopSource = nil
         eventTap = nil
-        middleDownAt = nil
+        pressBeginWorkItem?.cancel()
+        menuOpenWorkItem?.cancel()
+        pressBeginWorkItem = nil
+        menuOpenWorkItem = nil
+        isMiddleDown = false
+        menuOpen = false
         isRunning = false
     }
 
@@ -104,14 +131,11 @@ final class MouseEventMonitor {
 
         switch type {
         case .otherMouseDown:
-            middleDownAt = Date()
-
+            dispatchDown()
         case .otherMouseUp:
-            guard let downAt = middleDownAt else { return }
-            let elapsed = Date().timeIntervalSince(downAt)
-            middleDownAt = nil
-            dispatchPress(elapsed: elapsed)
-
+            dispatchUp()
+        case .otherMouseDragged:
+            dispatchDrag()
         default:
             break
         }
@@ -122,21 +146,18 @@ final class MouseEventMonitor {
 
         switch event.type {
         case .otherMouseDown:
-            middleDownAt = Date()
-
+            dispatchDown()
         case .otherMouseUp:
-            guard let downAt = middleDownAt else { return }
-            let elapsed = Date().timeIntervalSince(downAt)
-            middleDownAt = nil
-            dispatchPress(elapsed: elapsed)
-
+            dispatchUp()
+        case .otherMouseDragged:
+            dispatchDrag()
         default:
             break
         }
     }
 
     private func startNSEventFallbackMonitors() {
-        let mask: NSEvent.EventTypeMask = [.otherMouseDown, .otherMouseUp]
+        let mask: NSEvent.EventTypeMask = [.otherMouseDown, .otherMouseUp, .otherMouseDragged]
         globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
             self?.handle(event)
         }
@@ -146,11 +167,56 @@ final class MouseEventMonitor {
         }
     }
 
-    private func dispatchPress(elapsed: TimeInterval) {
+    private func dispatchDown() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            if elapsed >= self.longPressThreshold {
-                self.onLongPress?()
+            self.isMiddleDown = true
+            self.menuOpen = false
+            let anchor = NSEvent.mouseLocation
+
+            self.pressBeginWorkItem?.cancel()
+            self.menuOpenWorkItem?.cancel()
+
+            // 越过短暂延时仍按住 → 展示长按进度环（避免普通中键单击闪一下）
+            let ringWork = DispatchWorkItem { [weak self] in
+                guard let self = self, self.isMiddleDown, !self.menuOpen else { return }
+                self.onPressBegin?(anchor, self.longPressThreshold - self.ringDelay)
+            }
+            self.pressBeginWorkItem = ringWork
+            DispatchQueue.main.asyncAfter(deadline: .now() + self.ringDelay, execute: ringWork)
+
+            // 达到长按阈值仍按住 → 绽放成轮盘
+            let menuWork = DispatchWorkItem { [weak self] in
+                guard let self = self, self.isMiddleDown, !self.menuOpen else { return }
+                self.menuOpen = true
+                self.onMenuOpen?()
+            }
+            self.menuOpenWorkItem = menuWork
+            DispatchQueue.main.asyncAfter(deadline: .now() + self.longPressThreshold, execute: menuWork)
+        }
+    }
+
+    private func dispatchDrag() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, self.menuOpen else { return }
+            self.onMenuUpdate?(NSEvent.mouseLocation)
+        }
+    }
+
+    private func dispatchUp() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.pressBeginWorkItem?.cancel()
+            self.menuOpenWorkItem?.cancel()
+            self.pressBeginWorkItem = nil
+            self.menuOpenWorkItem = nil
+            let wasDown = self.isMiddleDown
+            self.isMiddleDown = false
+            guard wasDown else { return }
+            if self.menuOpen {
+                self.menuOpen = false
+                self.onMenuUpdate?(NSEvent.mouseLocation)
+                self.onMenuCommit?()
             } else {
                 self.onShortPress?()
             }
