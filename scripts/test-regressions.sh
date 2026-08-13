@@ -232,6 +232,12 @@ require_pattern "private func filteredItems\\(\\)" "$CLIPBOARD_DOCK" \
 require_pattern "NSSegmentedControl\\(" "$CLIPBOARD_DOCK" \
   "clipboard dock must expose a content-kind filter control"
 
+require_pattern "func handleKeyNavigation\\(" "$CLIPBOARD_DOCK" \
+  "clipboard dock must support keyboard navigation (arrows / Enter / number keys)"
+
+require_pattern "func activateFromKeyboard\\(\\)" "$CLIPBOARD_DOCK" \
+  "keyboard activation must reuse the same copy-and-close path as a mouse click"
+
 require_pattern "final class ScrollIndicatorView: NSView" "$CLIPBOARD_DOCK" \
   "clipboard dock should draw a bottom horizontal scroll indicator"
 

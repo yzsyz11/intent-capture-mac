@@ -39,6 +39,7 @@ final class ClipboardDockWindow: NSPanel {
 
     func showDock() {
         positionAboveDock()
+        dockView.resetKeyboardFocus()
         dockView.reload()
         makeKeyAndOrderFront(nil)
         startDismissMonitors()
@@ -60,6 +61,7 @@ final class ClipboardDockWindow: NSPanel {
             hideDock()
             return
         }
+        if dockView.handleKeyNavigation(event) { return }
         super.keyDown(with: event)
     }
 
@@ -139,7 +141,7 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
     private let scrollView = HorizontalWheelScrollView()
     private let stripView = ClipboardCardStripView()
     private let title = NSTextField(labelWithString: "剪贴板拓展坞")
-    private let subtitle = NSTextField(labelWithString: "⌘D 呼出 / 鼠标横向滚动")
+    private let subtitle = NSTextField(labelWithString: "⌘D 呼出 · ↑↓ 选择 · ↵ 复制 · 1-9 直选")
     private let emptyLabel = NSTextField(labelWithString: "复制文字、截图或色值后，会出现在这里")
     private let searchButton = DockSymbolButton(symbolName: "magnifyingglass", tooltip: "搜索")
     private let settingsButton = DockSymbolButton(symbolName: "gearshape", tooltip: "设置")
@@ -160,6 +162,8 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
     private var isSearching = false
     private var searchQuery = ""
     private var activeKindFilter: ClipboardHistoryKind?
+    private var displayedItems: [ClipboardHistoryItem] = []
+    private var focusedIndex: Int?
 
     init(store: ClipboardHistoryStore) {
         self.store = store
@@ -175,6 +179,10 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
 
     func reload() {
         let items = filteredItems()
+        displayedItems = items
+        if let idx = focusedIndex {
+            focusedIndex = items.isEmpty ? nil : min(idx, items.count - 1)
+        }
         stripView.configure(
             items: items,
             store: store,
@@ -182,6 +190,7 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
             onEdit: { [weak self] item, anchor in self?.requestEdit(item: item, anchor: anchor) }
         )
         stripView.setDeletionState(isActive: selectionState.isActive, selectedIDs: selectionState.selectedIDs)
+        stripView.setKeyboardFocus(focusedIndex)
         if store.items.isEmpty {
             emptyLabel.stringValue = "复制文字、截图或色值后，会出现在这里"
             emptyLabel.isHidden = false
@@ -194,6 +203,76 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
         needsDisplay = true
         indicatorView.refresh()
         updateDeletionControls()
+    }
+
+    func resetKeyboardFocus() {
+        focusedIndex = nil
+    }
+
+    // 浏览态下的键盘导航；搜索框聚焦时不拦截（交给输入框）。返回是否已处理。
+    func handleKeyNavigation(_ event: NSEvent) -> Bool {
+        if window?.firstResponder is NSText { return false }
+        switch Int(event.keyCode) {
+        case kVK_LeftArrow, kVK_UpArrow:
+            moveKeyboardFocus(by: -1)
+            return true
+        case kVK_RightArrow, kVK_DownArrow:
+            moveKeyboardFocus(by: 1)
+            return true
+        case kVK_Return, kVK_ANSI_KeypadEnter:
+            activateKeyboardFocus()
+            return true
+        default:
+            if let chars = event.charactersIgnoringModifiers,
+               let n = Int(chars), n >= 1, n <= 9 {
+                selectByNumber(n)
+                return true
+            }
+            return false
+        }
+    }
+
+    private func moveKeyboardFocus(by delta: Int) {
+        guard !displayedItems.isEmpty else { return }
+        let next: Int
+        if let current = focusedIndex {
+            next = max(0, min(displayedItems.count - 1, current + delta))
+        } else {
+            next = delta > 0 ? 0 : displayedItems.count - 1
+        }
+        focusedIndex = next
+        if let rect = stripView.setKeyboardFocus(next) {
+            scrollCardIntoView(rect)
+        }
+    }
+
+    private func activateKeyboardFocus() {
+        guard let idx = focusedIndex else { return }
+        stripView.activateCard(at: idx)
+    }
+
+    private func selectByNumber(_ n: Int) {
+        let idx = n - 1
+        guard idx >= 0, idx < displayedItems.count else { return }
+        focusedIndex = idx
+        stripView.setKeyboardFocus(idx)
+        stripView.activateCard(at: idx)
+    }
+
+    private func scrollCardIntoView(_ rect: CGRect) {
+        let clip = scrollView.contentView
+        let visible = clip.bounds
+        var targetX = visible.origin.x
+        if rect.minX < visible.minX {
+            targetX = rect.minX - 8
+        } else if rect.maxX > visible.maxX {
+            targetX = rect.maxX - visible.width + 8
+        }
+        let maxX = max((scrollView.documentView?.bounds.width ?? 0) - visible.width, 0)
+        targetX = min(max(targetX, 0), maxX)
+        clip.scroll(to: CGPoint(x: targetX, y: 0))
+        scrollView.reflectScrolledClipView(clip)
+        indicatorView.refresh()
     }
 
     // 按搜索词（匹配 preview / detail）与类型联合过滤；空条件返回全部。
@@ -265,7 +344,7 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
         super.layout()
         effectView.frame = bounds
         title.frame = CGRect(x: 24, y: bounds.height - 38, width: 150, height: 22)
-        subtitle.frame = CGRect(x: 158, y: bounds.height - 35, width: 250, height: 17)
+        subtitle.frame = CGRect(x: 158, y: bounds.height - 35, width: 360, height: 17)
         closeButton.frame = CGRect(x: bounds.width - 44, y: bounds.height - 39, width: 24, height: 24)
         settingsButton.frame = CGRect(x: bounds.width - 76, y: bounds.height - 39, width: 24, height: 24)
         searchButton.frame = CGRect(x: bounds.width - 108, y: bounds.height - 39, width: 24, height: 24)
@@ -427,7 +506,7 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
         refreshHeaderChrome()
         confirmDeleteButton.title = "删除（\(selectionState.selectedIDs.count)）"
         confirmDeleteButton.isEnabled = !selectionState.selectedIDs.isEmpty
-        subtitle.stringValue = isDeleting ? "选择要删除的卡片，确认后才会删除" : "⌘D 呼出 / 鼠标横向滚动"
+        subtitle.stringValue = isDeleting ? "选择要删除的卡片，确认后才会删除" : "⌘D 呼出 · ↑↓ 选择 · ↵ 复制 · 1-9 直选"
         stripView.setDeletionState(isActive: isDeleting, selectedIDs: selectionState.selectedIDs)
     }
 
@@ -599,6 +678,21 @@ final class ClipboardCardStripView: NSView {
         }
     }
 
+    /// 设置键盘聚焦卡片，返回其在条内的 frame 供滚动到可见区。
+    @discardableResult
+    func setKeyboardFocus(_ index: Int?) -> CGRect? {
+        for (i, card) in cardViews.enumerated() {
+            card.isKeyboardFocused = (i == index)
+        }
+        guard let index, index >= 0, index < cardViews.count else { return nil }
+        return cardViews[index].frame
+    }
+
+    func activateCard(at index: Int) {
+        guard index >= 0, index < cardViews.count else { return }
+        cardViews[index].activateFromKeyboard()
+    }
+
     override func layout() {
         super.layout()
         let cardWidth: CGFloat = 180
@@ -624,6 +718,9 @@ final class ClipboardCardView: NSView {
     private var isCopied = false
     private var isDeletionMode = false
     private var isSelectedForDeletion = false
+    var isKeyboardFocused = false {
+        didSet { if oldValue != isKeyboardFocused { needsDisplay = true } }
+    }
     var onToggleDeletion: (() -> Void)?
     var onEdit: ((ClipboardHistoryItem, CGPoint) -> Void)?
     var itemID: String { item.id }
@@ -702,6 +799,15 @@ final class ClipboardCardView: NSView {
         return true
     }
 
+    // 键盘（Enter / 数字键直选）走与单击相同的路径。
+    func activateFromKeyboard() {
+        if isDeletionMode {
+            onToggleDeletion?()
+        } else {
+            performCopyAndClose()
+        }
+    }
+
     func setDeletionState(isActive: Bool, isSelected: Bool) {
         isDeletionMode = isActive
         isSelectedForDeletion = isSelected
@@ -760,6 +866,10 @@ final class ClipboardCardView: NSView {
         } else if isHovering {
             fillColor = NSColor.systemBlue.withAlphaComponent(0.30)
             strokeColor = NSColor.systemBlue.withAlphaComponent(0.92)
+        } else if isKeyboardFocused {
+            let accent = AppSettings.shared.accentColor
+            fillColor = accent.withAlphaComponent(0.30)
+            strokeColor = accent.withAlphaComponent(0.95)
         } else {
             fillColor = NSColor.white.withAlphaComponent(0.28)
             strokeColor = NSColor.white.withAlphaComponent(0.38)
