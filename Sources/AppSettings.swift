@@ -65,11 +65,45 @@ final class AppSettings {
         set { defaults.set(newValue, forKey: "clipboardHistoryEnabled") }
     }
 
+    /// 全局主题强调色（十六进制），应用于侧边栏高亮、按钮描边与中键轮盘。
+    static let defaultAccentHex = "#2EA6C7"
+
+    var accentHex: String {
+        get { defaults.string(forKey: "accentColor") ?? Self.defaultAccentHex }
+        set { defaults.set(newValue, forKey: "accentColor") }
+    }
+
+    var accentColor: NSColor {
+        get { NSColor(hexString: accentHex) ?? NSColor(hexString: Self.defaultAccentHex)! }
+        set { accentHex = newValue.hexString }
+    }
+
     func buildFileURL() throws -> URL {
         try FileManager.default.createDirectory(at: saveDirectory, withIntermediateDirectories: true)
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         let name = "capture-\(formatter.string(from: Date())).png"
         return saveDirectory.appendingPathComponent(name)
+    }
+}
+
+extension NSColor {
+    /// 从 "#RRGGBB" 生成 sRGB 颜色；便于主题色在存储与选中比较时无损往返。
+    convenience init?(hexString: String) {
+        let trimmed = hexString.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hex = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
+        guard hex.count == 6, let value = Int(hex, radix: 16) else { return nil }
+        self.init(srgbRed: CGFloat((value >> 16) & 0xff) / 255,
+                  green: CGFloat((value >> 8) & 0xff) / 255,
+                  blue: CGFloat(value & 0xff) / 255,
+                  alpha: 1)
+    }
+
+    var hexString: String {
+        guard let rgb = usingColorSpace(.sRGB) else { return AppSettings.defaultAccentHex }
+        let r = Int(round(rgb.redComponent * 255))
+        let g = Int(round(rgb.greenComponent * 255))
+        let b = Int(round(rgb.blueComponent * 255))
+        return String(format: "#%02X%02X%02X", r, g, b)
     }
 }

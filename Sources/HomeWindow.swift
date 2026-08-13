@@ -2,7 +2,7 @@ import AppKit
 import ApplicationServices
 
 enum HomeSection: CaseIterable {
-    case action, hotkeys, clipboard, mouse, saving
+    case action, hotkeys, clipboard, mouse, appearance, saving
 
     var title: String {
         switch self {
@@ -10,6 +10,7 @@ enum HomeSection: CaseIterable {
         case .hotkeys: return "快捷键"
         case .clipboard: return "剪贴板拓展坞"
         case .mouse: return "鼠标中键"
+        case .appearance: return "外观"
         case .saving: return "默认与保存"
         }
     }
@@ -20,6 +21,7 @@ enum HomeSection: CaseIterable {
         case .hotkeys: return "keyboard"
         case .clipboard: return "clipboard"
         case .mouse: return "computermouse"
+        case .appearance: return "paintpalette"
         case .saving: return "folder"
         }
     }
@@ -71,6 +73,7 @@ final class HomeWindowView: NSView {
     private let hotkeySection: HotkeySectionView
     private let clipboardSection: ClipboardSectionView
     private let mouseSection: MouseSectionView
+    private let appearanceSection: AppearanceSectionView
     private let saveSection: SaveSectionView
     private var sections: [HomeSection: NSView] = [:]
 
@@ -82,10 +85,12 @@ final class HomeWindowView: NSView {
         hotkeySection = HotkeySectionView(settings: settings, onSave: onSettingsSaved)
         clipboardSection = ClipboardSectionView(settings: settings, onSave: onSettingsSaved)
         mouseSection = MouseSectionView(settings: settings, onSave: onSettingsSaved)
+        appearanceSection = AppearanceSectionView(settings: settings)
         saveSection = SaveSectionView(settings: settings, onSave: onSettingsSaved, onActionChanged: {})
         super.init(frame: CGRect(x: 0, y: 0, width: 680, height: 420))
         wantsLayer = true
         saveSection.onActionChanged = { [weak self] in self?.actionSection.reloadCurrent() }
+        appearanceSection.onAccentChanged = { [weak self] in self?.refreshAccent() }
         build()
     }
 
@@ -112,6 +117,7 @@ final class HomeWindowView: NSView {
             .hotkeys: hotkeySection,
             .clipboard: clipboardSection,
             .mouse: mouseSection,
+            .appearance: appearanceSection,
             .saving: saveSection
         ]
         actionSection.onSelect = { [weak self] action in self?.onSelectAction(action) }
@@ -134,6 +140,16 @@ final class HomeWindowView: NSView {
 
     func refreshPermissionStatus() {
         mouseSection.refreshPermissionStatus()
+    }
+
+    /// 主题色改变后，强制重绘所有会用到强调色的视图。
+    private func refreshAccent() {
+        func redraw(_ view: NSView) {
+            view.needsDisplay = true
+            view.subviews.forEach(redraw)
+        }
+        redraw(sidebar)
+        sections.values.forEach(redraw)
     }
 }
 
@@ -195,7 +211,7 @@ final class NavItemButton: NSButton {
     let section: HomeSection
     var isActive: Bool = false { didSet { needsDisplay = true } }
     private var isHovering = false
-    private static let accent = NSColor(calibratedRed: 0.18, green: 0.65, blue: 0.78, alpha: 1)
+    private var accent: NSColor { AppSettings.shared.accentColor }
 
     init(section: HomeSection) {
         self.section = section
@@ -229,7 +245,7 @@ final class NavItemButton: NSButton {
     override func draw(_ dirtyRect: NSRect) {
         let path = NSBezierPath(roundedRect: bounds, xRadius: 10, yRadius: 10)
         if isActive {
-            Self.accent.withAlphaComponent(0.18).setFill()
+            accent.withAlphaComponent(0.18).setFill()
         } else if isHovering {
             NSColor.white.withAlphaComponent(0.08).setFill()
         } else {
@@ -238,18 +254,18 @@ final class NavItemButton: NSButton {
         path.fill()
         if isActive {
             path.lineWidth = 1
-            Self.accent.withAlphaComponent(0.40).setStroke()
+            accent.withAlphaComponent(0.40).setStroke()
             path.stroke()
         }
 
         if let symbol = NSImage(systemSymbolName: section.symbolName, accessibilityDescription: nil) {
-            let tinted = symbol.tinted(with: isActive ? Self.accent : NSColor.secondaryLabelColor)
+            let tinted = symbol.tinted(with: isActive ? accent : NSColor.secondaryLabelColor)
             tinted.draw(in: CGRect(x: 10, y: bounds.midY - 8, width: 16, height: 16))
         }
 
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 12.5, weight: isActive ? .semibold : .regular),
-            .foregroundColor: isActive ? Self.accent : NSColor.labelColor
+            .foregroundColor: isActive ? accent : NSColor.labelColor
         ]
         NSString(string: section.title).draw(at: CGPoint(x: 34, y: bounds.midY - 8), withAttributes: attrs)
     }
@@ -346,7 +362,7 @@ final class ActionChoiceButton: NSButton {
 
     override func draw(_ dirtyRect: NSRect) {
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 12, yRadius: 12)
-        let accent = NSColor(calibratedRed: 0.18, green: 0.65, blue: 0.78, alpha: 1)
+        let accent = AppSettings.shared.accentColor
         if current {
             accent.withAlphaComponent(0.12).setFill()
         } else {
@@ -372,7 +388,7 @@ final class ActionChoiceButton: NSButton {
         if current {
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 11, weight: .medium),
-                .foregroundColor: NSColor(calibratedRed: 0.18, green: 0.65, blue: 0.78, alpha: 1)
+                .foregroundColor: AppSettings.shared.accentColor
             ]
             NSString(string: "当前").draw(in: CGRect(x: bounds.width - 50, y: 10, width: 34, height: 16), withAttributes: attrs)
         }
@@ -546,6 +562,110 @@ final class MouseSectionView: NSView {
     }
 }
 
+final class AppearanceSectionView: NSView {
+    private let settings: AppSettings
+    var onAccentChanged: () -> Void = {}
+    private let card = GlassSectionCard(frame: CGRect(x: 28, y: 28, width: 436, height: 176))
+    private let colorWell = NSColorWell()
+    private var swatches: [AccentSwatchButton] = []
+    private let presets = ["#2EA6C7", "#4C8DFF", "#7C6CF0", "#E0567B",
+                           "#E8814A", "#E7B93A", "#3FB56B", "#8A8F98"]
+
+    override var isFlipped: Bool { true }
+
+    init(settings: AppSettings) {
+        self.settings = settings
+        super.init(frame: CGRect(x: 0, y: 0, width: 492, height: 420))
+        addSubview(card)
+        sectionTitle("外观主题色", in: card)
+
+        let subtitle = NSTextField(labelWithString: "选择强调色，会应用到侧边栏、按钮与中键轮盘")
+        subtitle.font = .systemFont(ofSize: 12)
+        subtitle.textColor = .secondaryLabelColor
+        subtitle.frame = CGRect(x: 16, y: 44, width: 404, height: 16)
+        card.addSubview(subtitle)
+
+        var x: CGFloat = 16
+        for hex in presets {
+            let swatch = AccentSwatchButton(hex: hex)
+            swatch.frame = CGRect(x: x, y: 78, width: 32, height: 32)
+            swatch.target = self
+            swatch.action = #selector(pickPreset(_:))
+            card.addSubview(swatch)
+            swatches.append(swatch)
+            x += 40
+        }
+
+        let customLabel = NSTextField(labelWithString: "自定义")
+        customLabel.font = .systemFont(ofSize: 12)
+        customLabel.textColor = .secondaryLabelColor
+        customLabel.frame = CGRect(x: 16, y: 130, width: 60, height: 16)
+        card.addSubview(customLabel)
+
+        colorWell.frame = CGRect(x: 80, y: 124, width: 48, height: 28)
+        colorWell.color = settings.accentColor
+        colorWell.target = self
+        colorWell.action = #selector(pickCustom)
+        card.addSubview(colorWell)
+
+        refreshSelection()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc private func pickPreset(_ sender: AccentSwatchButton) {
+        settings.accentHex = sender.hex
+        colorWell.color = settings.accentColor
+        onAccentChanged()
+        refreshSelection()
+        Toast.show("主题色已更新")
+    }
+
+    @objc private func pickCustom() {
+        settings.accentColor = colorWell.color
+        onAccentChanged()
+        refreshSelection()
+    }
+
+    private func refreshSelection() {
+        let current = settings.accentHex.uppercased()
+        swatches.forEach { $0.isCurrent = $0.hex.uppercased() == current }
+    }
+}
+
+/// 主题色预设色板：圆角色块，选中时描一圈白环。
+final class AccentSwatchButton: NSButton {
+    let hex: String
+    var isCurrent = false { didSet { needsDisplay = true } }
+
+    init(hex: String) {
+        self.hex = hex
+        super.init(frame: .zero)
+        title = ""
+        isBordered = false
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let rect = bounds.insetBy(dx: 3, dy: 3)
+        let path = NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
+        (NSColor(hexString: hex) ?? .gray).setFill()
+        path.fill()
+        if isCurrent {
+            let ring = NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 9, yRadius: 9)
+            NSColor.white.withAlphaComponent(0.92).setStroke()
+            ring.lineWidth = 2
+            ring.stroke()
+        }
+    }
+}
+
 final class SaveSectionView: NSView {
     private let directory = GlassTextField()
     private let defaultAction = NSPopUpButton()
@@ -670,7 +790,7 @@ final class GlassTextField: NSTextField {
 
 /// 强调色描边按钮：用于需要用户主动触发的动作（如授权），区别于普通玻璃卡片。
 final class AccentGhostButton: NSButton {
-    private static let accent = NSColor(calibratedRed: 0.18, green: 0.65, blue: 0.78, alpha: 1)
+    private var accent: NSColor { AppSettings.shared.accentColor }
 
     init(title: String) {
         super.init(frame: .zero)
@@ -686,15 +806,15 @@ final class AccentGhostButton: NSButton {
 
     override func draw(_ dirtyRect: NSRect) {
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 8, yRadius: 8)
-        Self.accent.withAlphaComponent(isHighlighted ? 0.16 : 0.08).setFill()
+        accent.withAlphaComponent(isHighlighted ? 0.16 : 0.08).setFill()
         path.fill()
-        Self.accent.withAlphaComponent(0.42).setStroke()
+        accent.withAlphaComponent(0.42).setStroke()
         path.lineWidth = 1
         path.stroke()
 
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-            .foregroundColor: Self.accent
+            .foregroundColor: accent
         ]
         let text = NSString(string: title)
         let size = text.size(withAttributes: attrs)

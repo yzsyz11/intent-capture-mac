@@ -85,7 +85,7 @@ private final class RadialMenuView: NSView {
         let selectedIcon: CGImage?
     }
 
-    private static let accent = NSColor(calibratedRed: 0.18, green: 0.65, blue: 0.78, alpha: 1)
+    private var accent: NSColor { AppSettings.shared.accentColor }
     private let r0: CGFloat = 58
     private let r1: CGFloat = 120
     private let bulge: CGFloat = 16
@@ -137,8 +137,8 @@ private final class RadialMenuView: NSView {
             let centerDeg = 90 - CGFloat(i) * step          // 首项在正上方，顺时针排列
             let shape = CAShapeLayer()
             shape.path = sectorPath(centerDeg: centerDeg, half: step / 2, outer: r1)
-            shape.fillColor = NSColor.black.withAlphaComponent(0.30).cgColor  // 半透明甜甜圈，透出桌面
-            shape.strokeColor = NSColor.white.withAlphaComponent(0.10).cgColor
+            shape.fillColor = NSColor.black.withAlphaComponent(0.45).cgColor  // 半透明甜甜圈：够深以稳定衬托文字
+            shape.strokeColor = NSColor.white.withAlphaComponent(0.12).cgColor
             shape.lineWidth = 1
             wheelLayer.addSublayer(shape)
 
@@ -157,7 +157,7 @@ private final class RadialMenuView: NSView {
             label.bounds = CGRect(x: 0, y: 0, width: 92, height: 54)
             label.position = lp
 
-            let normalIcon = symbolImage(action.radialSymbolName, color: NSColor.white.withAlphaComponent(0.78))
+            let normalIcon = symbolImage(action.radialSymbolName, color: .white)
             let selectedIcon = symbolImage(action.radialSymbolName, color: .white)
             let icon = CALayer()
             icon.contents = normalIcon
@@ -165,8 +165,7 @@ private final class RadialMenuView: NSView {
             icon.frame = CGRect(x: 34, y: 28, width: 24, height: 24)
             label.addSublayer(icon)
 
-            let title = makeText(action.title, size: 12, weight: .medium,
-                                 color: NSColor.white.withAlphaComponent(0.88))
+            let title = makeText(action.title, size: 12, weight: .medium, color: .white)
             title.frame = CGRect(x: 4, y: 4, width: 84, height: 18)
             label.addSublayer(title)
 
@@ -191,7 +190,7 @@ private final class RadialMenuView: NSView {
         wheelLayer.addSublayer(hub)
 
         let hubIcon = CALayer()
-        hubIcon.contents = symbolImage("cursorarrow", color: Self.accent)
+        hubIcon.contents = symbolImage("cursorarrow", color: accent)
         hubIcon.contentsGravity = .resizeAspect
         hubIcon.frame = CGRect(x: localCenter.x - 11, y: localCenter.y + 6, width: 22, height: 22)
         wheelLayer.addSublayer(hubIcon)
@@ -224,7 +223,7 @@ private final class RadialMenuView: NSView {
                    endAngle: .pi / 2 - 2 * .pi, clockwise: true)
         progressRing.path = arc
         progressRing.fillColor = NSColor.clear.cgColor
-        progressRing.strokeColor = Self.accent.cgColor
+        progressRing.strokeColor = accent.cgColor
         progressRing.lineWidth = 2.5
         progressRing.lineCap = .round
         progressRing.strokeEnd = 0
@@ -324,13 +323,13 @@ private final class RadialMenuView: NSView {
 
     private func setSector(_ i: Int, selected: Bool) {
         let s = sectors[i]
-        s.shape.fillColor = (selected ? Self.accent.withAlphaComponent(0.55)
-                                      : NSColor.black.withAlphaComponent(0.30)).cgColor
-        s.shape.strokeColor = (selected ? Self.accent.withAlphaComponent(0.75)
-                                        : NSColor.white.withAlphaComponent(0.10)).cgColor
+        // 选中用主题色作扇区填充，图标/文字始终白色 —— 无论主题色深浅都保证对比。
+        s.shape.fillColor = (selected ? accent.withAlphaComponent(0.85)
+                                      : NSColor.black.withAlphaComponent(0.45)).cgColor
+        s.shape.strokeColor = (selected ? accent.withAlphaComponent(0.95)
+                                        : NSColor.white.withAlphaComponent(0.12)).cgColor
         s.icon.contents = selected ? s.selectedIcon : s.normalIcon
-        s.title.foregroundColor = (selected ? NSColor.white
-                                            : NSColor.white.withAlphaComponent(0.88)).cgColor
+        s.title.foregroundColor = NSColor.white.cgColor
 
         // 果冻形变：外缘半径用弹簧动画过冲回弹
         let step: CGFloat = 360 / CGFloat(sectors.count)
