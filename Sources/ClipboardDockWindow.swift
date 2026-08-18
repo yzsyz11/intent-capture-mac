@@ -151,6 +151,7 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
     private let selectAllButton = DockTextButton(title: "全选", target: nil, action: nil)
     private let cancelDeleteButton = DockTextButton(title: "取消", target: nil, action: nil)
     private let confirmDeleteButton = DockTextButton(title: "删除（0）", target: nil, action: nil)
+    private let cancelSearchButton = DockTextButton(title: "取消", target: nil, action: nil)
     private let searchField = NSSearchField()
     private let filterControl = NSSegmentedControl(
         labels: ["全部", "文字", "图片", "链接", "颜色"],
@@ -307,9 +308,14 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
             exitSearch()
         } else {
             isSearching = true
+            needsLayout = true
             refreshHeaderChrome()
             window?.makeFirstResponder(searchField)
         }
+    }
+
+    @objc private func cancelSearch() {
+        exitSearch()
     }
 
     private func exitSearch() {
@@ -319,6 +325,7 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
         activeKindFilter = nil
         filterControl.selectedSegment = 0
         window?.makeFirstResponder(nil)
+        needsLayout = true
         refreshHeaderChrome()
         reload()
     }
@@ -344,7 +351,6 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
         super.layout()
         effectView.frame = bounds
         title.frame = CGRect(x: 24, y: bounds.height - 38, width: 150, height: 22)
-        subtitle.frame = CGRect(x: 158, y: bounds.height - 35, width: 360, height: 17)
         closeButton.frame = CGRect(x: bounds.width - 44, y: bounds.height - 39, width: 24, height: 24)
         settingsButton.frame = CGRect(x: bounds.width - 76, y: bounds.height - 39, width: 24, height: 24)
         searchButton.frame = CGRect(x: bounds.width - 108, y: bounds.height - 39, width: 24, height: 24)
@@ -352,8 +358,13 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
         confirmDeleteButton.frame = CGRect(x: bounds.width - 112, y: bounds.height - 41, width: 92, height: 26)
         cancelDeleteButton.frame = CGRect(x: bounds.width - 174, y: bounds.height - 41, width: 54, height: 26)
         selectAllButton.frame = CGRect(x: bounds.width - 236, y: bounds.height - 41, width: 54, height: 26)
-        searchField.frame = CGRect(x: 24, y: bounds.height - 40, width: 220, height: 26)
-        filterControl.frame = CGRect(x: 254, y: bounds.height - 40, width: 280, height: 26)
+        // 搜索簇右对齐：… [搜索框] [类型筛选] [取消]
+        cancelSearchButton.frame = CGRect(x: bounds.width - 20 - 52, y: bounds.height - 41, width: 52, height: 26)
+        filterControl.frame = CGRect(x: cancelSearchButton.frame.minX - 8 - 230, y: bounds.height - 40, width: 230, height: 26)
+        searchField.frame = CGRect(x: filterControl.frame.minX - 8 - 190, y: bounds.height - 40, width: 190, height: 26)
+        // 搜索时把副标题宽度压到搜索框左侧，避免与搜索簇重叠；平时用全宽。
+        let subtitleWidth = isSearching ? max(120, searchField.frame.minX - 8 - 158) : 360
+        subtitle.frame = CGRect(x: 158, y: bounds.height - 35, width: subtitleWidth, height: 17)
         scrollView.frame = CGRect(x: 20, y: 25, width: bounds.width - 40, height: 108)
         emptyLabel.frame = CGRect(x: 24, y: 70, width: bounds.width - 48, height: 24)
         indicatorView.frame = CGRect(x: bounds.midX - 90, y: 16, width: 180, height: 4)
@@ -423,6 +434,11 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
         filterControl.target = self
         filterControl.action = #selector(filterChanged)
         addSubview(filterControl)
+
+        cancelSearchButton.isHidden = true
+        cancelSearchButton.target = self
+        cancelSearchButton.action = #selector(cancelSearch)
+        addSubview(cancelSearchButton)
 
         clearButton.target = self
         clearButton.action = #selector(enterDeletionMode)
@@ -511,17 +527,22 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
     }
 
     // 统一管理头部控件可见性：删除模式与搜索模式互斥，删除时优先。
+    // 搜索时保留标题与提示（右侧空间足够），仅用搜索簇替换右侧图标簇。
     private func refreshHeaderChrome() {
         let isDeleting = selectionState.isActive
         let searching = isSearching && !isDeleting
-        title.isHidden = searching
-        subtitle.isHidden = searching
+        title.isHidden = false
+        subtitle.isHidden = false
+        // 右侧图标簇：删除模式或搜索模式下让位。
+        searchButton.isHidden = isDeleting || searching
+        settingsButton.isHidden = isDeleting || searching
+        closeButton.isHidden = isDeleting || searching
+        clearButton.isHidden = isDeleting || searching
+        // 搜索簇。
         searchField.isHidden = !searching
         filterControl.isHidden = !searching
-        searchButton.isHidden = isDeleting
-        settingsButton.isHidden = isDeleting
-        closeButton.isHidden = isDeleting
-        clearButton.isHidden = isDeleting
+        cancelSearchButton.isHidden = !searching
+        // 删除簇。
         selectAllButton.isHidden = !isDeleting
         cancelDeleteButton.isHidden = !isDeleting
         confirmDeleteButton.isHidden = !isDeleting
