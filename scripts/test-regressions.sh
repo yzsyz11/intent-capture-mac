@@ -238,6 +238,12 @@ require_pattern "func handleKeyNavigation\\(" "$CLIPBOARD_DOCK" \
 require_pattern "func activateFromKeyboard\\(\\)" "$CLIPBOARD_DOCK" \
   "keyboard activation must reuse the same copy-and-close path as a mouse click"
 
+require_pattern "settingsButton\\.action = #selector\\(openSettings\\)" "$CLIPBOARD_DOCK" \
+  "clipboard dock settings button must be wired to open the app home"
+
+require_pattern "dock\\.onOpenSettings =" "$APP_DELEGATE" \
+  "app delegate must connect the dock settings button to opening the home window"
+
 require_pattern "final class ScrollIndicatorView: NSView" "$CLIPBOARD_DOCK" \
   "clipboard dock should draw a bottom horizontal scroll indicator"
 

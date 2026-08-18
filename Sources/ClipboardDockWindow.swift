@@ -7,6 +7,7 @@ final class ClipboardDockWindow: NSPanel {
     private var outsideMouseMonitor: Any?
     private var localMouseMonitor: Any?
     private var editorPanel: ClipboardDockEditorPanel?
+    var onOpenSettings: (() -> Void)?
 
     init(store: ClipboardHistoryStore) {
         self.store = store
@@ -132,6 +133,11 @@ final class ClipboardDockWindow: NSPanel {
         removeChildWindow(editorPanel)
         editorPanel.close()
         self.editorPanel = nil
+    }
+
+    fileprivate func requestOpenSettings() {
+        hideDock()
+        onOpenSettings?()
     }
 }
 
@@ -413,6 +419,8 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
         closeButton.autoresizingMask = [.minXMargin, .minYMargin]
         addSubview(closeButton)
 
+        settingsButton.target = self
+        settingsButton.action = #selector(openSettings)
         settingsButton.autoresizingMask = [.minXMargin, .minYMargin]
         addSubview(settingsButton)
 
@@ -477,6 +485,10 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
 
     @objc private func closePanel() {
         (window as? ClipboardDockWindow)?.hideDock()
+    }
+
+    @objc private func openSettings() {
+        (window as? ClipboardDockWindow)?.requestOpenSettings()
     }
 
     @objc private func enterDeletionMode() {

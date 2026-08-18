@@ -205,7 +205,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleClipboardDock() {
         if clipboardDock == nil {
-            clipboardDock = ClipboardDockWindow(store: clipboardStore)
+            let dock = ClipboardDockWindow(store: clipboardStore)
+            dock.onOpenSettings = { [weak self] in self?.showActionPanel() }
+            clipboardDock = dock
         }
         clipboardDock?.toggle()
     }
