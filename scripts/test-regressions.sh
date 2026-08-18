@@ -244,6 +244,12 @@ require_pattern "settingsButton\\.action = #selector\\(openSettings\\)" "$CLIPBO
 require_pattern "dock\\.onOpenSettings =" "$APP_DELEGATE" \
   "app delegate must connect the dock settings button to opening the home window"
 
+require_pattern "static var dockAccent" "$CLIPBOARD_DOCK" \
+  "clipboard dock theme colours must derive from a single accent source"
+
+reject_pattern "NSColor\\.systemBlue\\.withAlphaComponent\\(0\\.30\\)" "$CLIPBOARD_DOCK" \
+  "card hover must follow the theme accent, not a hard-coded system blue"
+
 require_pattern "final class ScrollIndicatorView: NSView" "$CLIPBOARD_DOCK" \
   "clipboard dock should draw a bottom horizontal scroll indicator"
 

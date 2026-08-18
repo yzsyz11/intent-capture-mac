@@ -563,9 +563,9 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
     private func drawContentBand() {
         let band = CGRect(x: 16, y: 10, width: bounds.width - 32, height: 128)
         let path = NSBezierPath(roundedRect: band, xRadius: 14, yRadius: 14)
-        NSColor.white.withAlphaComponent(0.075).setFill()
+        NSColor.dockAccent.withAlphaComponent(0.07).setFill()
         path.fill()
-        NSColor.white.withAlphaComponent(0.16).setStroke()
+        NSColor.dockAccent.withAlphaComponent(0.22).setStroke()
         path.lineWidth = 1
         path.stroke()
     }
@@ -620,7 +620,10 @@ final class ScrollIndicatorView: NSView {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         thumbLayer.frame = CGRect(x: thumbX, y: 0, width: thumbWidth, height: bounds.height)
-        thumbLayer.backgroundColor = NSColor.white.withAlphaComponent(metrics.canScroll ? 0.92 : 0.32).cgColor
+        // 可滚动时用主题色，不可滚动时淡出为中性白。
+        thumbLayer.backgroundColor = metrics.canScroll
+            ? NSColor.dockAccent.withAlphaComponent(0.95).cgColor
+            : NSColor.white.withAlphaComponent(0.32).cgColor
         CATransaction.commit()
     }
 }
@@ -897,12 +900,11 @@ final class ClipboardCardView: NSView {
             fillColor = NSColor.systemGreen.withAlphaComponent(0.34)
             strokeColor = NSColor.systemGreen.withAlphaComponent(0.95)
         } else if isHovering {
-            fillColor = NSColor.systemBlue.withAlphaComponent(0.30)
-            strokeColor = NSColor.systemBlue.withAlphaComponent(0.92)
+            fillColor = NSColor.dockAccent.withAlphaComponent(0.24)
+            strokeColor = NSColor.dockAccent.withAlphaComponent(0.85)
         } else if isKeyboardFocused {
-            let accent = AppSettings.shared.accentColor
-            fillColor = accent.withAlphaComponent(0.30)
-            strokeColor = accent.withAlphaComponent(0.95)
+            fillColor = NSColor.dockAccent.withAlphaComponent(0.34)
+            strokeColor = NSColor.dockAccent.withAlphaComponent(1.0)
         } else {
             fillColor = NSColor.white.withAlphaComponent(0.28)
             strokeColor = NSColor.white.withAlphaComponent(0.38)
@@ -910,7 +912,8 @@ final class ClipboardCardView: NSView {
         fillColor.setFill()
         path.fill()
         strokeColor.setStroke()
-        path.lineWidth = 1
+        // 键盘聚焦用更粗的环，与鼠标 hover（同为主题色）区分开。
+        path.lineWidth = isKeyboardFocused ? 2 : 1
         path.stroke()
 
         if isDeletionMode {
@@ -1193,6 +1196,9 @@ final class ClipboardPreviewButton: NSButton {
 }
 
 private extension NSColor {
+    /// 拓展坞内所有主题相关色的单一来源；hover / 聚焦 / 内容带 / 滚动条统一从这里派生。
+    static var dockAccent: NSColor { AppSettings.shared.accentColor }
+
     static func fromClipboardString(_ value: String) -> NSColor? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("#") {
