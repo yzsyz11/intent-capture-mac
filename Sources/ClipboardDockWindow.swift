@@ -147,7 +147,7 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
     private let scrollView = HorizontalWheelScrollView()
     private let stripView = ClipboardCardStripView()
     private let title = NSTextField(labelWithString: "剪贴板拓展坞")
-    private let subtitle = NSTextField(labelWithString: "⌘D 呼出 · ↑↓ 选择 · ↵ 复制 · 1-9 直选")
+    private let subtitle = NSTextField(labelWithString: ClipboardDockView.browseHint)
     private let emptyLabel = NSTextField(labelWithString: "复制文字、截图或色值后，会出现在这里")
     private let searchButton = DockSymbolButton(symbolName: "magnifyingglass", tooltip: "搜索")
     private let settingsButton = DockSymbolButton(symbolName: "gearshape", tooltip: "设置")
@@ -171,6 +171,8 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
     private var activeKindFilter: ClipboardHistoryKind?
     private var displayedItems: [ClipboardHistoryItem] = []
     private var focusedIndex: Int?
+    private static let browseHint = "⌘D 呼出 · ↑↓ 选择 · ↵ 复制 · 1-9 直选"
+    private var dockWindow: ClipboardDockWindow? { window as? ClipboardDockWindow }
 
     init(store: ClipboardHistoryStore) {
         self.store = store
@@ -486,11 +488,11 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
     }
 
     @objc private func closePanel() {
-        (window as? ClipboardDockWindow)?.hideDock()
+        dockWindow?.hideDock()
     }
 
     @objc private func openSettings() {
-        (window as? ClipboardDockWindow)?.requestOpenSettings()
+        dockWindow?.requestOpenSettings()
     }
 
     @objc private func enterDeletionMode() {
@@ -528,7 +530,7 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
 
     private func requestEdit(item: ClipboardHistoryItem, anchor: CGPoint) {
         guard !selectionState.isActive else { return }
-        (window as? ClipboardDockWindow)?.showEditor(for: item, anchor: anchor)
+        dockWindow?.showEditor(for: item, anchor: anchor)
     }
 
     private func updateDeletionControls() {
@@ -536,7 +538,7 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
         refreshHeaderChrome()
         confirmDeleteButton.title = "删除（\(selectionState.selectedIDs.count)）"
         confirmDeleteButton.isEnabled = !selectionState.selectedIDs.isEmpty
-        subtitle.stringValue = isDeleting ? "选择要删除的卡片，确认后才会删除" : "⌘D 呼出 · ↑↓ 选择 · ↵ 复制 · 1-9 直选"
+        subtitle.stringValue = isDeleting ? "选择要删除的卡片，确认后才会删除" : Self.browseHint
         stripView.setDeletionState(isActive: isDeleting, selectedIDs: selectionState.selectedIDs)
     }
 
@@ -766,6 +768,7 @@ final class ClipboardCardView: NSView {
     var onToggleDeletion: (() -> Void)?
     var onEdit: ((ClipboardHistoryItem, CGPoint) -> Void)?
     var itemID: String { item.id }
+    private var dockWindow: ClipboardDockWindow? { window as? ClipboardDockWindow }
 
     init(item: ClipboardHistoryItem, store: ClipboardHistoryStore) {
         self.item = item
@@ -877,7 +880,7 @@ final class ClipboardCardView: NSView {
             tone: .success,
             anchor: feedbackAnchor
         )
-        (window as? ClipboardDockWindow)?.hideDock()
+        dockWindow?.hideDock()
     }
 
     private var feedbackAnchor: CGPoint {
