@@ -404,6 +404,8 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
             // Only the small indicator layer needs to move every frame — invalidating
             // the whole 1160x182 panel here was the actual cause of scroll jank.
             self?.indicatorView.refresh()
+            // 清掉滚动中卡住的 hover 高亮（mouseExited 在惯性滚动下不保证送达）。
+            self?.stripView.clearHover()
         }
 
         title.font = .systemFont(ofSize: 17, weight: .semibold)
@@ -729,6 +731,10 @@ final class ClipboardCardStripView: NSView {
         cardViews[index].activateFromKeyboard()
     }
 
+    func clearHover() {
+        cardViews.forEach { $0.clearHover() }
+    }
+
     override func layout() {
         super.layout()
         let cardWidth: CGFloat = 180
@@ -810,6 +816,14 @@ final class ClipboardCardView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
+        isHovering = false
+        needsDisplay = true
+    }
+
+    // 滚动时卡片从光标下滑过，AppKit 在惯性/程序化滚动下不保证发 mouseExited，
+    // 会留下一片卡住的 hover 高亮。滚动时统一清一遍，仅重绘真的在 hover 的卡。
+    func clearHover() {
+        guard isHovering else { return }
         isHovering = false
         needsDisplay = true
     }

@@ -250,6 +250,9 @@ require_pattern "static var dockAccent" "$CLIPBOARD_DOCK" \
 reject_pattern "NSColor\\.systemBlue\\.withAlphaComponent\\(0\\.30\\)" "$CLIPBOARD_DOCK" \
   "card hover must follow the theme accent, not a hard-coded system blue"
 
+require_pattern "self\\?\\.stripView\\.clearHover\\(\\)" "$CLIPBOARD_DOCK" \
+  "scrolling must clear stale card hover highlights that mouseExited misses during momentum"
+
 require_pattern "final class ScrollIndicatorView: NSView" "$CLIPBOARD_DOCK" \
   "clipboard dock should draw a bottom horizontal scroll indicator"
 
