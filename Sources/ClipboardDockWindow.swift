@@ -958,12 +958,13 @@ final class ClipboardCardView: NSView {
             isDragging = true
             resetTilt()   // 进入拖动，取消 hover 倾斜
         }
-        let translateY = max(dy, -10)                  // 下拖只给一点点阻尼
-        let progress = min(max(translateY / deleteThreshold, 0), 1)
+        let travel = max(dy, -10)                       // 上拖为正，下拖只给一点点阻尼
+        let progress = min(max(travel / deleteThreshold, 0), 1)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        layer?.transform = CATransform3DMakeTranslation(0, translateY, 0)
-        layer?.opacity = Float(1 - progress * 0.35)    // 越接近删除越淡
+        // 卡片 layer 随翻转父视图几何翻转（+y 向下），上拖要向上移动须取负号。
+        layer?.transform = CATransform3DMakeTranslation(0, -travel, 0)
+        layer?.opacity = Float(1 - progress * 0.35)     // 越接近删除越淡
         CATransaction.commit()
     }
 
@@ -1005,11 +1006,13 @@ final class ClipboardCardView: NSView {
         CATransaction.begin()
         CATransaction.setAnimationDuration(0.18)
         CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeIn))
+        let anchor = feedbackAnchor
         CATransaction.setCompletionBlock { [weak self] in
             guard let self else { return }
             self.store.delete(self.item)   // reload 会重建卡片
+            ClipboardDockFeedback.show(message: "已删除 · \(self.item.kind.categoryTitle)", tone: .destructive, anchor: anchor)
         }
-        layer.transform = CATransform3DMakeTranslation(0, bounds.height, 0)
+        layer.transform = CATransform3DMakeTranslation(0, -bounds.height, 0)   // 向上飞出
         layer.opacity = 0
         CATransaction.commit()
     }
