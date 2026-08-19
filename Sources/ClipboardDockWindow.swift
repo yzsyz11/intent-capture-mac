@@ -50,7 +50,22 @@ final class ClipboardDockWindow: NSPanel {
         dockView.reload()
     }
 
-    func hideDock() {
+    func hideDock(animated: Bool = false) {
+        guard animated else {
+            finishHide()
+            return
+        }
+        // 复制动效结束后整条 Dock 直接淡出，避免"先露出清晰 Dock 再关"的闪烁。
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.16
+            animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            self?.finishHide()
+            self?.alphaValue = 1   // 复位供下次呼出
+        })
+    }
+
+    private func finishHide() {
         closeEditor()
         stopDismissMonitors()
         orderOut(nil)
@@ -140,11 +155,6 @@ final class ClipboardDockWindow: NSPanel {
         onOpenSettings?()
     }
 
-    var isCopyAnimating: Bool { dockView.isCopyAnimating }
-
-    fileprivate func playCopySuccess(completion: @escaping () -> Void) {
-        dockView.playCopySuccess(completion: completion)
-    }
 }
 
 final class ClipboardDockView: NSView, NSSearchFieldDelegate {
@@ -179,48 +189,7 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
     private var focusedIndex: Int?
     private static let browseHint = "⌘D 呼出 · ↑↓ 选择 · ↵ 复制 · 1-9 直选"
     private var dockWindow: ClipboardDockWindow? { window as? ClipboardDockWindow }
-    private var copyVeil: NSVisualEffectView?
     private var scrollGeneration = 0
-
-    var isCopyAnimating: Bool { copyVeil != nil }
-
-    // 复制成功：整条 Dock 蒙上高斯模糊聚焦，中央播放「转圈→对号」，结束后回调。
-    func playCopySuccess(completion: @escaping () -> Void) {
-        guard copyVeil == nil else { return }
-        let veil = NSVisualEffectView(frame: bounds)
-        veil.autoresizingMask = [.width, .height]
-        veil.material = .underWindowBackground
-        veil.blendingMode = .withinWindow
-        veil.state = .active
-        veil.wantsLayer = true
-        veil.layer?.cornerRadius = 20
-        veil.layer?.masksToBounds = true
-        veil.alphaValue = 0
-        addSubview(veil, positioned: .above, relativeTo: nil)
-        copyVeil = veil
-
-        let d: CGFloat = 72
-        let anim = SuccessAnimationView(diameter: d, accent: .dockAccent, showsBackdrop: false)
-        anim.frame = CGRect(x: bounds.midX - d / 2, y: bounds.midY - d / 2, width: d, height: d)
-        anim.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
-        veil.addSubview(anim)
-
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.10
-            veil.animator().alphaValue = 1
-        }
-        anim.play { [weak self] in
-            guard let self else { completion(); return }
-            NSAnimationContext.runAnimationGroup({ context in
-                context.duration = 0.12
-                self.copyVeil?.animator().alphaValue = 0
-            }, completionHandler: {
-                self.copyVeil?.removeFromSuperview()
-                self.copyVeil = nil
-                completion()
-            })
-        }
-    }
 
     init(store: ClipboardHistoryStore) {
         self.store = store
@@ -831,6 +800,7 @@ final class ClipboardCardView: NSView {
     private var isCopied = false
     private var isDeletionMode = false
     private var isSelectedForDeletion = false
+    private var isCopying = false
     private var dragStart: CGPoint?
     private var isDragging = false
     private let dragSlop: CGFloat = 4
@@ -892,7 +862,7 @@ final class ClipboardCardView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard !suppressHover, isHovering, !isDeletionMode, dockWindow?.isCopyAnimating != true else { return }
+        guard !suppressHover, isHovering, !isDeletionMode, !isCopying else { return }
         updateTilt(at: convert(event.locationInWindow, from: nil), animated: false)
     }
 
@@ -904,7 +874,7 @@ final class ClipboardCardView: NSView {
     func hoverEnter(at point: CGPoint) {
         isHovering = true
         needsDisplay = true
-        guard !isDeletionMode, dockWindow?.isCopyAnimating != true else { return }
+        guard !isDeletionMode, !isCopying else { return }
         raiseShadow(true)
         updateTilt(at: point, animated: true)
     }
@@ -981,7 +951,7 @@ final class ClipboardCardView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard !isDeletionMode, let start = dragStart, dockWindow?.isCopyAnimating != true else { return }
+        guard !isDeletionMode, let start = dragStart, !isCopying else { return }
         let dx = event.locationInWindow.x - start.x
         let dy = event.locationInWindow.y - start.y   // 上拖为正
         if !isDragging {
@@ -1077,9 +1047,37 @@ final class ClipboardCardView: NSView {
 
     private func performCopyAndClose() {
         // 防重入：动画播放期间忽略再次触发（也避免重复复制）。
-        guard let dock = dockWindow, !dock.isCopyAnimating else { return }
+        guard !isCopying else { return }
+        isCopying = true
         store.restore(item)   // 复制是瞬时的；下面的转圈→对号仅作反馈动效。
-        dock.playCopySuccess { [weak dock] in dock?.hideDock() }
+        playCardCopySuccess()
+    }
+
+    // 在被点卡片上播放「转圈→对号」：卡片级毛玻璃聚焦，动画结束后整条 Dock 直接淡出关闭。
+    private func playCardCopySuccess() {
+        resetTilt()
+        let veil = NSVisualEffectView(frame: bounds)
+        veil.material = .underWindowBackground
+        veil.blendingMode = .withinWindow
+        veil.state = .active
+        veil.wantsLayer = true
+        veil.layer?.cornerRadius = 10
+        veil.layer?.masksToBounds = true
+        veil.alphaValue = 0
+        addSubview(veil)
+
+        let d: CGFloat = 44
+        let anim = SuccessAnimationView(diameter: d, accent: .dockAccent, showsBackdrop: false)
+        anim.frame = CGRect(x: bounds.midX - d / 2, y: bounds.midY - d / 2, width: d, height: d)
+        veil.addSubview(anim)
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.08
+            veil.animator().alphaValue = 1
+        }
+        anim.play { [weak self] in
+            self?.dockWindow?.hideDock(animated: true)
+        }
     }
 
     private var feedbackAnchor: CGPoint {
