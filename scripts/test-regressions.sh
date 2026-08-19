@@ -262,8 +262,11 @@ require_pattern "static var dockAccent" "$CLIPBOARD_DOCK" \
 reject_pattern "NSColor\\.systemBlue\\.withAlphaComponent\\(0\\.30\\)" "$CLIPBOARD_DOCK" \
   "card hover must follow the theme accent, not a hard-coded system blue"
 
-require_pattern "self\\?\\.stripView\\.clearHover\\(\\)" "$CLIPBOARD_DOCK" \
-  "scrolling must clear stale card hover highlights that mouseExited misses during momentum"
+require_pattern "beginScrollSuppression\\(\\)" "$CLIPBOARD_DOCK" \
+  "scrolling must suppress card hover so cards sliding under the cursor don't flicker"
+
+require_pattern "endScrollSuppression" "$CLIPBOARD_DOCK" \
+  "hover must be re-evaluated for the card under the cursor once scrolling stops"
 
 require_pattern "final class ScrollIndicatorView: NSView" "$CLIPBOARD_DOCK" \
   "clipboard dock should draw a bottom horizontal scroll indicator"
@@ -283,7 +286,7 @@ require_pattern "height: 4" "$CLIPBOARD_DOCK" \
 require_pattern "CATransaction\\.setDisableActions\\(true\\)" "$CLIPBOARD_DOCK" \
   "scroll indicator layer moves must not use implicit animation, or the thumb visibly lags behind the scroll"
 
-require_pattern "self\\?\\.indicatorView\\.refresh\\(\\)" "$CLIPBOARD_DOCK" \
+require_pattern "indicatorView\\.refresh\\(\\)" "$CLIPBOARD_DOCK" \
   "the per-frame scroll callback must only refresh the small indicator layer, not the whole dock panel"
 
 require_pattern "let signedDelta = -rawDelta" "$CLIPBOARD_DOCK" \

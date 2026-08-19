@@ -180,6 +180,7 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
     private static let browseHint = "⌘D 呼出 · ↑↓ 选择 · ↵ 复制 · 1-9 直选"
     private var dockWindow: ClipboardDockWindow? { window as? ClipboardDockWindow }
     private var copyVeil: NSVisualEffectView?
+    private var scrollGeneration = 0
 
     var isCopyAnimating: Bool { copyVeil != nil }
 
@@ -450,11 +451,20 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
         }
         addSubview(indicatorView)
         scrollView.onScroll = { [weak self] in
+            guard let self else { return }
             // Only the small indicator layer needs to move every frame — invalidating
             // the whole 1160x182 panel here was the actual cause of scroll jank.
-            self?.indicatorView.refresh()
-            // 清掉滚动中卡住的 hover 高亮（mouseExited 在惯性滚动下不保证送达）。
-            self?.stripView.clearHover()
+            self.indicatorView.refresh()
+            // 滚动期间抑制 hover（卡片从光标下滑过会反复 enter/exit，一闪一闪）；
+            // 停止滚动 0.14s 后再对光标正下方的卡评估一次 hover。
+            self.stripView.beginScrollSuppression()
+            self.scrollGeneration += 1
+            let generation = self.scrollGeneration
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) { [weak self] in
+                guard let self, self.scrollGeneration == generation else { return }
+                let mouse = self.window?.mouseLocationOutsideOfEventStream ?? .zero
+                self.stripView.endScrollSuppression(mouseInWindow: mouse)
+            }
         }
 
         title.font = .systemFont(ofSize: 17, weight: .semibold)
@@ -780,8 +790,20 @@ final class ClipboardCardStripView: NSView {
         cardViews[index].activateFromKeyboard()
     }
 
-    func clearHover() {
-        cardViews.forEach { $0.clearHover() }
+    // 滚动开始：抑制所有卡片的 hover，避免卡片从光标下滑过时反复 enter/exit 抖动。
+    func beginScrollSuppression() {
+        cardViews.forEach { $0.suppressHover = true }
+    }
+
+    // 滚动结束：解除抑制，只对光标正下方那张卡重新点亮 hover。
+    func endScrollSuppression(mouseInWindow point: CGPoint) {
+        for card in cardViews {
+            card.suppressHover = false
+            let local = card.convert(point, from: nil)
+            if card.bounds.contains(local) {
+                card.hoverEnter(at: local)
+            }
+        }
     }
 
     override func layout() {
@@ -865,33 +887,42 @@ final class ClipboardCardView: NSView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        isHovering = true
-        needsDisplay = true
-        guard !isDeletionMode, dockWindow?.isCopyAnimating != true else { return }
-        raiseShadow(true)
-        updateTilt(at: convert(event.locationInWindow, from: nil), animated: true)
+        guard !suppressHover else { return }
+        hoverEnter(at: convert(event.locationInWindow, from: nil))
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard isHovering, !isDeletionMode, dockWindow?.isCopyAnimating != true else { return }
+        guard !suppressHover, isHovering, !isDeletionMode, dockWindow?.isCopyAnimating != true else { return }
         updateTilt(at: convert(event.locationInWindow, from: nil), animated: false)
     }
 
     override func mouseExited(with event: NSEvent) {
-        isHovering = false
-        needsDisplay = true
-        raiseShadow(false)
-        resetTilt()
+        hoverExit()
     }
 
-    // 滚动时卡片从光标下滑过，AppKit 在惯性/程序化滚动下不保证发 mouseExited，
-    // 会留下一片卡住的 hover 高亮。滚动时统一清一遍，仅重绘真的在 hover 的卡。
-    func clearHover() {
+    // hover 进入/退出抽成方法，供 mouse 事件与滚动结束后的重新评估复用。
+    func hoverEnter(at point: CGPoint) {
+        isHovering = true
+        needsDisplay = true
+        guard !isDeletionMode, dockWindow?.isCopyAnimating != true else { return }
+        raiseShadow(true)
+        updateTilt(at: point, animated: true)
+    }
+
+    func hoverExit() {
         guard isHovering else { return }
         isHovering = false
         needsDisplay = true
         raiseShadow(false)
         resetTilt()
+    }
+
+    // 滚动期间由外部置位，屏蔽 mouseEntered 造成的反复 hover 抖动。
+    var suppressHover = false {
+        didSet {
+            guard suppressHover, isHovering else { return }
+            hoverExit()
+        }
     }
 
     // 整卡跟随鼠标做轻微 3D 倾斜 + 微抬 + 阴影，营造漂浮感（不拆卡片结构）。
