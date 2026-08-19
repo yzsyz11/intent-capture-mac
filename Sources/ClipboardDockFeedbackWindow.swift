@@ -100,20 +100,16 @@ final class ClipboardDockFeedbackView: NSView {
 enum ClipboardDockFeedback {
     private static var stack: [ClipboardDockFeedbackWindow] = []
     private static var baseAnchor: CGPoint?
-    private static let gap: CGFloat = 8
+    private static let pileOffset: CGFloat = 9      // 每层小偏移，堆成一叠而非铺开
     private static let lifetime: TimeInterval = 1.6
 
     static func show(message: String, tone: ClipboardDockFeedbackTone, anchor: CGPoint) {
         if stack.isEmpty { baseAnchor = anchor }
         let window = ClipboardDockFeedbackWindow(message: message, tone: tone)
-        stack.append(window)
         window.alphaValue = 0
+        stack.append(window)
         window.orderFrontRegardless()
-        restack()
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.12
-            window.animator().alphaValue = 1
-        }
+        restack()                       // 由 restack 统一把新窗从 0 淡入到目标透明度
         DispatchQueue.main.asyncAfter(deadline: .now() + lifetime) {
             dismiss(window)
         }
@@ -132,20 +128,24 @@ enum ClipboardDockFeedback {
         restack()
     }
 
-    // 从 baseAnchor 起向上堆叠，最新的在最上。
+    // 紧凑堆叠：最新的在最前（贴近 anchor、最实），越旧越往上错开一点、越淡，像一叠卡片。
     private static func restack() {
         guard let base = baseAnchor else { return }
         let height = ClipboardDockFeedbackWindow.toastHeight
         let screen = NSScreen.screens.first { $0.frame.contains(base) } ?? NSScreen.main
         let visible = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
+        let count = stack.count
         for (i, window) in stack.enumerated() {
+            let depth = count - 1 - i    // 最新(末尾)=0 在最前
             let width = window.frame.width
             let x = min(max(base.x - width / 2, visible.minX + 10), visible.maxX - width - 10)
-            let y = min(base.y + 8 + CGFloat(i) * (height + gap), visible.maxY - height - 10)
+            let y = min(base.y + 8 + CGFloat(depth) * pileOffset, visible.maxY - height - 10)
+            let alpha: CGFloat = depth == 0 ? 1 : max(0.28, 1 - CGFloat(depth) * 0.26)
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = 0.16
                 context.timingFunction = CAMediaTimingFunction(name: .easeOut)
                 window.animator().setFrame(CGRect(x: x, y: y, width: width, height: height), display: true)
+                window.animator().alphaValue = alpha
             }
         }
     }
