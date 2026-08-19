@@ -763,6 +763,10 @@ final class ClipboardCardView: NSView {
     private var isDeletionMode = false
     private var isSelectedForDeletion = false
     private var successView: SuccessAnimationView?
+    private var dragStart: CGPoint?
+    private var isDragging = false
+    private let dragSlop: CGFloat = 4
+    private let deleteThreshold: CGFloat = 60   // 上拖超过此距离即删除
     var isKeyboardFocused = false {
         didSet { if oldValue != isKeyboardFocused { needsDisplay = true } }
     }
@@ -894,7 +898,74 @@ final class ClipboardCardView: NSView {
             onToggleDeletion?()
             return
         }
-        performCopyAndClose()
+        // 记录起点，把「点击=复制」的判定推迟到 mouseUp，以便区分点击与拖动。
+        dragStart = event.locationInWindow
+        isDragging = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard !isDeletionMode, let start = dragStart, successView == nil else { return }
+        let dx = event.locationInWindow.x - start.x
+        let dy = event.locationInWindow.y - start.y   // 上拖为正
+        if !isDragging {
+            guard hypot(dx, dy) > dragSlop else { return }
+            isDragging = true
+            resetTilt()   // 进入拖动，取消 hover 倾斜
+        }
+        let translateY = max(dy, -10)                  // 下拖只给一点点阻尼
+        let progress = min(max(translateY / deleteThreshold, 0), 1)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer?.transform = CATransform3DMakeTranslation(0, translateY, 0)
+        layer?.opacity = Float(1 - progress * 0.35)    // 越接近删除越淡
+        CATransaction.commit()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard !isDeletionMode, let start = dragStart else { return }
+        dragStart = nil
+        if !isDragging {
+            performCopyAndClose()   // 真·点击
+            return
+        }
+        isDragging = false
+        let dy = event.locationInWindow.y - start.y
+        if dy > deleteThreshold {
+            performSwipeDelete()
+        } else {
+            springBack()
+        }
+    }
+
+    private func springBack() {
+        guard let layer else { return }
+        let spring = CASpringAnimation(keyPath: "transform")
+        spring.fromValue = layer.presentation()?.transform ?? layer.transform
+        spring.toValue = CATransform3DIdentity
+        spring.damping = 14
+        spring.stiffness = 200
+        spring.mass = 0.7
+        spring.duration = spring.settlingDuration
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(spring.settlingDuration)
+        layer.add(spring, forKey: "springback")
+        layer.transform = CATransform3DIdentity
+        layer.opacity = 1
+        CATransaction.commit()
+    }
+
+    private func performSwipeDelete() {
+        guard let layer else { store.delete(item); return }
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.18)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeIn))
+        CATransaction.setCompletionBlock { [weak self] in
+            guard let self else { return }
+            self.store.delete(self.item)   // reload 会重建卡片
+        }
+        layer.transform = CATransform3DMakeTranslation(0, bounds.height, 0)
+        layer.opacity = 0
+        CATransaction.commit()
     }
 
     override func accessibilityPerformPress() -> Bool {

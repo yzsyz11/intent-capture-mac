@@ -133,6 +133,12 @@ require_pattern "func updateTilt\\(" "$CLIPBOARD_DOCK" \
 require_pattern "CATransform3DMakeScale" "$CLIPBOARD_DOCK" \
   "dock icon buttons must give a hover scale/press response"
 
+require_pattern "func performSwipeDelete\\(\\)" "$CLIPBOARD_DOCK" \
+  "dragging a card up past the threshold must delete it"
+
+require_pattern "CASpringAnimation" "$CLIPBOARD_DOCK" \
+  "a drag released within range must spring the card back"
+
 require_pattern "func performCopyAndClose\\(\\)" "$CLIPBOARD_DOCK" \
   "a single click on a card must copy the item and dismiss the dock"
 
