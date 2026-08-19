@@ -301,31 +301,55 @@ final class ToastView: NSView {
 
         var color: NSColor {
             switch self {
-            case .success: return NSColor(calibratedRed: 0.18, green: 0.65, blue: 0.78, alpha: 1)
-            case .warning: return NSColor(calibratedRed: 0.94, green: 0.61, blue: 0.20, alpha: 1)
-            case .failure: return NSColor(calibratedRed: 0.88, green: 0.25, blue: 0.28, alpha: 1)
-            case .info: return NSColor(calibratedRed: 0.34, green: 0.72, blue: 0.92, alpha: 1)
+            case .success: return .systemGreen
+            case .warning: return .systemOrange
+            case .failure: return .systemRed
+            case .info: return .systemBlue
+            }
+        }
+
+        var symbolName: String {
+            switch self {
+            case .success: return "checkmark.circle.fill"
+            case .warning: return "exclamationmark.triangle.fill"
+            case .failure: return "xmark.circle.fill"
+            case .info: return "info.circle.fill"
             }
         }
     }
 
-    private let message: String
-    private let tone: Tone
-    private let image: NSImage?
-    var onPreview: (() -> Void)?
-
-    private var thumbRect: CGRect = .zero
+    private let content: ToastContentView
+    var onPreview: (() -> Void)? {
+        didSet { updateTrackingAreas() }
+    }
 
     init(message: String, image: NSImage? = nil) {
-        self.message = message
-        self.tone = Self.tone(for: message)
-        self.image = image
+        let tone = Self.tone(for: message)
         let h: CGFloat = image != nil ? 88 : 56
+        content = ToastContentView(message: message, image: image, tone: tone,
+                                   frame: CGRect(x: 0, y: 0, width: 420, height: h))
         super.init(frame: CGRect(x: 0, y: 0, width: 420, height: h))
         wantsLayer = true
+
+        // 与剪贴板反馈胶囊统一的毛玻璃底 + 色调描边。
+        let blur = NSVisualEffectView(frame: bounds)
+        blur.autoresizingMask = [.width, .height]
+        blur.material = .hudWindow
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        blur.wantsLayer = true
+        blur.layer?.cornerRadius = 16
+        blur.layer?.masksToBounds = true
+        blur.layer?.borderWidth = 1
+        blur.layer?.borderColor = tone.color.withAlphaComponent(0.5).cgColor
+        addSubview(blur)
+
+        content.autoresizingMask = [.width, .height]
+        addSubview(content)
+
         alphaValue = 0
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.2
+            ctx.duration = 0.16
             self.animator().alphaValue = 1
         }
     }
@@ -343,143 +367,15 @@ final class ToastView: NSView {
     }
 
     override func resetCursorRects() {
-        if onPreview != nil, !thumbRect.isEmpty {
-            addCursorRect(thumbRect, cursor: .pointingHand)
+        if onPreview != nil, !content.thumbRect.isEmpty {
+            addCursorRect(content.thumbRect, cursor: .pointingHand)
         }
     }
 
     override func mouseDown(with event: NSEvent) {
         let pt = convert(event.locationInWindow, from: nil)
-        if thumbRect.contains(pt) {
+        if content.thumbRect.contains(pt) {
             onPreview?()
-        }
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        let card = bounds.insetBy(dx: 0.5, dy: 0.5)
-        let path = NSBezierPath(roundedRect: card, xRadius: 14, yRadius: 14)
-
-        // Darker background for better contrast
-        NSColor.windowBackgroundColor.withAlphaComponent(0.85).setFill()
-        path.fill()
-
-        // Brighter border
-        NSColor.separatorColor.withAlphaComponent(0.55).setStroke()
-        path.lineWidth = 1
-        path.stroke()
-
-        // Left accent strip
-        let strip = NSBezierPath(roundedRect: CGRect(x: 9, y: 12, width: 4, height: bounds.height - 24), xRadius: 2, yRadius: 2)
-        tone.color.setFill()
-        strip.fill()
-
-        // Icon dot (vertically centered)
-        let dotSize: CGFloat = 14
-        let dotX: CGFloat = 22
-        let dotY = (bounds.height - dotSize) / 2
-        tone.color.setFill()
-        NSBezierPath(ovalIn: CGRect(x: dotX, y: dotY, width: dotSize, height: dotSize)).fill()
-
-        // Icon glyph (offset relative to dot center)
-        let cx = dotX + dotSize / 2  // 29
-        let cy = dotY + dotSize / 2
-        let iconPath = NSBezierPath()
-        switch tone {
-        case .success:
-            iconPath.move(to: CGPoint(x: cx - 3, y: cy))
-            iconPath.line(to: CGPoint(x: cx, y: cy + 3))
-            iconPath.line(to: CGPoint(x: cx + 4, y: cy - 4))
-            NSColor.white.withAlphaComponent(0.9).setStroke()
-            iconPath.lineWidth = 2
-            iconPath.stroke()
-        case .warning:
-            iconPath.move(to: CGPoint(x: cx, y: cy - 5))
-            iconPath.line(to: CGPoint(x: cx, y: cy + 1))
-            iconPath.move(to: CGPoint(x: cx, y: cy + 4))
-            iconPath.line(to: CGPoint(x: cx, y: cy + 5))
-            NSColor.white.withAlphaComponent(0.9).setStroke()
-            iconPath.lineWidth = 2.2
-            iconPath.stroke()
-        case .failure:
-            iconPath.move(to: CGPoint(x: cx - 3, y: cy - 4))
-            iconPath.line(to: CGPoint(x: cx + 3, y: cy + 4))
-            iconPath.move(to: CGPoint(x: cx + 3, y: cy - 4))
-            iconPath.line(to: CGPoint(x: cx - 3, y: cy + 4))
-            NSColor.white.withAlphaComponent(0.9).setStroke()
-            iconPath.lineWidth = 2.2
-            iconPath.stroke()
-        case .info:
-            iconPath.move(to: CGPoint(x: cx, y: cy - 5))
-            iconPath.line(to: CGPoint(x: cx, y: cy - 4))
-            iconPath.move(to: CGPoint(x: cx, y: cy - 2))
-            iconPath.line(to: CGPoint(x: cx, y: cy + 5))
-            NSColor.white.withAlphaComponent(0.9).setStroke()
-            iconPath.lineWidth = 2
-            iconPath.stroke()
-        }
-
-        // Thumbnail
-        let thumbW: CGFloat = 96
-        let thumbH: CGFloat = 68
-        let thumbX = bounds.width - thumbW - 12
-        let thumbY = (bounds.height - thumbH) / 2
-        let tr = CGRect(x: thumbX, y: thumbY, width: thumbW, height: thumbH)
-        thumbRect = tr
-
-        if let image {
-            let thumbPath = NSBezierPath(roundedRect: tr.insetBy(dx: 0.5, dy: 0.5), xRadius: 5, yRadius: 5)
-            NSGraphicsContext.saveGraphicsState()
-            thumbPath.addClip()
-            image.draw(in: tr, from: .zero, operation: .sourceOver, fraction: 1)
-            NSGraphicsContext.restoreGraphicsState()
-            NSColor.separatorColor.withAlphaComponent(0.4).setStroke()
-            thumbPath.lineWidth = 1
-            thumbPath.stroke()
-
-            if onPreview != nil {
-                let hintAttrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: 9, weight: .medium),
-                    .foregroundColor: NSColor.white
-                ]
-                let hint = NSString(string: "点击预览")
-                let hintSize = hint.size(withAttributes: hintAttrs)
-                let hintBg = CGRect(x: tr.midX - hintSize.width/2 - 4, y: tr.minY + 4,
-                                    width: hintSize.width + 8, height: hintSize.height + 3)
-                let hintBgPath = NSBezierPath(roundedRect: hintBg, xRadius: 3, yRadius: 3)
-                NSColor.black.withAlphaComponent(0.5).setFill()
-                hintBgPath.fill()
-                hint.draw(at: CGPoint(x: hintBg.minX + 4, y: hintBg.minY + 1.5), withAttributes: hintAttrs)
-            }
-        }
-
-        // Text
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-            .foregroundColor: NSColor.labelColor
-        ]
-        let textRight: CGFloat = image != nil ? thumbX - 8 : bounds.width - 10
-        let textRect = CGRect(x: 46, y: (bounds.height - 24) / 2, width: textRight - 46, height: 24)
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineBreakMode = .byTruncatingTail
-
-        let ocrPrefix = "OCR 已复制："
-        if message.hasPrefix(ocrPrefix) {
-            let content = String(message.dropFirst(ocrPrefix.count))
-            let aStr = NSMutableAttributedString(string: ocrPrefix, attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: NSColor.labelColor,
-                .paragraphStyle: paragraph
-            ])
-            aStr.append(NSAttributedString(string: content, attributes: [
-                .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
-                .foregroundColor: NSColor.systemBlue,
-                .paragraphStyle: paragraph
-            ]))
-            aStr.draw(in: textRect)
-        } else {
-            var merged = attrs
-            merged[.paragraphStyle] = paragraph
-            NSString(string: message).draw(in: textRect, withAttributes: merged)
         }
     }
 
@@ -494,6 +390,82 @@ final class ToastView: NSView {
             return .success
         }
         return .info
+    }
+}
+
+private final class ToastContentView: NSView {
+    let thumbRect: CGRect
+
+    init(message: String, image: NSImage?, tone: ToastView.Tone, frame: NSRect) {
+        let hasImage = image != nil
+        let thumbW: CGFloat = 96, thumbH: CGFloat = 68
+        let thumbX = frame.width - thumbW - 14
+        thumbRect = hasImage
+            ? CGRect(x: thumbX, y: (frame.height - thumbH) / 2, width: thumbW, height: thumbH)
+            : .zero
+        super.init(frame: frame)
+        wantsLayer = true
+
+        // 色调图标（SF Symbol）
+        let iconSize: CGFloat = 20
+        let icon = NSImageView(frame: CGRect(x: 16, y: (frame.height - iconSize) / 2, width: iconSize, height: iconSize))
+        icon.image = NSImage(systemSymbolName: tone.symbolName, accessibilityDescription: nil)
+        icon.contentTintColor = tone.color
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        addSubview(icon)
+
+        // 文本（OCR 前缀 + 蓝色内容特例）
+        let textRight = hasImage ? thumbX - 10 : frame.width - 14
+        let label = NSTextField(labelWithString: message)
+        label.backgroundColor = .clear
+        label.isBordered = false
+        label.lineBreakMode = .byTruncatingTail
+        label.cell?.usesSingleLineMode = true
+        label.attributedStringValue = Self.attributed(for: message)
+        label.frame = CGRect(x: 44, y: (frame.height - 18) / 2, width: textRight - 44, height: 18)
+        addSubview(label)
+
+        // 缩略图 + 预览提示
+        if let image {
+            let thumb = NSImageView(frame: thumbRect)
+            thumb.image = image
+            thumb.imageScaling = .scaleProportionallyUpOrDown
+            thumb.wantsLayer = true
+            thumb.layer?.cornerRadius = 6
+            thumb.layer?.masksToBounds = true
+            thumb.layer?.borderWidth = 1
+            thumb.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.5).cgColor
+            addSubview(thumb)
+
+            let hint = NSTextField(labelWithString: "点击预览")
+            hint.font = .systemFont(ofSize: 9, weight: .medium)
+            hint.textColor = .white
+            hint.alignment = .center
+            hint.wantsLayer = true
+            hint.drawsBackground = true
+            hint.backgroundColor = NSColor.black.withAlphaComponent(0.5)
+            hint.layer?.cornerRadius = 3
+            hint.layer?.masksToBounds = true
+            let hw: CGFloat = 52
+            hint.frame = CGRect(x: thumbRect.midX - hw / 2, y: thumbRect.minY + 4, width: hw, height: 14)
+            addSubview(hint)
+        }
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private static func attributed(for message: String) -> NSAttributedString {
+        let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
+        let ocrPrefix = "OCR 已复制："
+        guard message.hasPrefix(ocrPrefix) else {
+            return NSAttributedString(string: message, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
+        }
+        let result = NSMutableAttributedString(string: ocrPrefix, attributes: [.font: font, .foregroundColor: NSColor.labelColor])
+        result.append(NSAttributedString(string: String(message.dropFirst(ocrPrefix.count)),
+                                         attributes: [.font: font, .foregroundColor: NSColor.systemBlue]))
+        return result
     }
 }
 
