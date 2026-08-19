@@ -10,22 +10,24 @@ import QuartzCore
 ///   3. 绿色对号自己描出来（check）
 ///   4. 短暂停留后回调（hold）
 final class SuccessAnimationView: NSView {
-    // 时长常量，集中在此便于调手感。
-    private let spinDuration: CFTimeInterval = 0.30
-    private let completeDuration: CFTimeInterval = 0.16
-    private let checkDuration: CFTimeInterval = 0.18
-    private let holdDuration: CFTimeInterval = 0.08
+    // 时长常量，集中在此便于调手感（已压短）。
+    private let spinDuration: CFTimeInterval = 0.20
+    private let completeDuration: CFTimeInterval = 0.10
+    private let checkDuration: CFTimeInterval = 0.12
+    private let holdDuration: CFTimeInterval = 0.04
 
     private let disc = CAShapeLayer()
     private let ring = CAShapeLayer()
     private let check = CAShapeLayer()
     private let accent: NSColor
     private let success: NSColor
+    private let showsBackdrop: Bool
     private var isPlaying = false
 
-    init(diameter: CGFloat, accent: NSColor, success: NSColor = .systemGreen) {
+    init(diameter: CGFloat, accent: NSColor, success: NSColor = .systemGreen, showsBackdrop: Bool = true) {
         self.accent = accent
         self.success = success
+        self.showsBackdrop = showsBackdrop
         super.init(frame: CGRect(x: 0, y: 0, width: diameter, height: diameter))
         wantsLayer = true
         configureLayers(diameter: diameter)
@@ -38,15 +40,20 @@ final class SuccessAnimationView: NSView {
     private func configureLayers(diameter d: CGFloat) {
         let center = CGPoint(x: d / 2, y: d / 2)
         let radius = d * 0.40
-        let lineWidth = max(2, d * 0.08)
+        let lineWidth = max(2, d * 0.07)
 
-        // 背衬暗圆，保证在任意卡片内容（含图片）上都读得清。
-        disc.path = CGPath(ellipseIn: bounds, transform: nil)
-        disc.fillColor = NSColor.black.withAlphaComponent(0.32).cgColor
-        layer?.addSublayer(disc)
+        // 关键：给每个 shape layer 设 frame=bounds，使其 anchorPoint 落在中心，
+        // 否则 transform.rotation.z 会绕图层原点(角)旋转，转圈就"乱飞"。
+        if showsBackdrop {
+            disc.frame = bounds
+            disc.path = CGPath(ellipseIn: bounds, transform: nil)
+            disc.fillColor = NSColor.black.withAlphaComponent(0.32).cgColor
+            layer?.addSublayer(disc)
+        }
 
         let ringPath = CGMutablePath()
         ringPath.addArc(center: center, radius: radius, startAngle: .pi / 2, endAngle: .pi / 2 - 2 * .pi, clockwise: true)
+        ring.frame = bounds
         ring.path = ringPath
         ring.fillColor = NSColor.clear.cgColor
         ring.strokeColor = accent.cgColor
@@ -60,6 +67,7 @@ final class SuccessAnimationView: NSView {
         checkPath.move(to: CGPoint(x: d * 0.30, y: d * 0.50))
         checkPath.addLine(to: CGPoint(x: d * 0.44, y: d * 0.35))
         checkPath.addLine(to: CGPoint(x: d * 0.72, y: d * 0.66))
+        check.frame = bounds
         check.path = checkPath
         check.fillColor = NSColor.clear.cgColor
         check.strokeColor = success.cgColor

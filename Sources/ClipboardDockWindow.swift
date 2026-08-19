@@ -139,6 +139,12 @@ final class ClipboardDockWindow: NSPanel {
         hideDock()
         onOpenSettings?()
     }
+
+    var isCopyAnimating: Bool { dockView.isCopyAnimating }
+
+    fileprivate func playCopySuccess(completion: @escaping () -> Void) {
+        dockView.playCopySuccess(completion: completion)
+    }
 }
 
 final class ClipboardDockView: NSView, NSSearchFieldDelegate {
@@ -173,6 +179,47 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
     private var focusedIndex: Int?
     private static let browseHint = "⌘D 呼出 · ↑↓ 选择 · ↵ 复制 · 1-9 直选"
     private var dockWindow: ClipboardDockWindow? { window as? ClipboardDockWindow }
+    private var copyVeil: NSVisualEffectView?
+
+    var isCopyAnimating: Bool { copyVeil != nil }
+
+    // 复制成功：整条 Dock 蒙上高斯模糊聚焦，中央播放「转圈→对号」，结束后回调。
+    func playCopySuccess(completion: @escaping () -> Void) {
+        guard copyVeil == nil else { return }
+        let veil = NSVisualEffectView(frame: bounds)
+        veil.autoresizingMask = [.width, .height]
+        veil.material = .underWindowBackground
+        veil.blendingMode = .withinWindow
+        veil.state = .active
+        veil.wantsLayer = true
+        veil.layer?.cornerRadius = 20
+        veil.layer?.masksToBounds = true
+        veil.alphaValue = 0
+        addSubview(veil, positioned: .above, relativeTo: nil)
+        copyVeil = veil
+
+        let d: CGFloat = 72
+        let anim = SuccessAnimationView(diameter: d, accent: .dockAccent, showsBackdrop: false)
+        anim.frame = CGRect(x: bounds.midX - d / 2, y: bounds.midY - d / 2, width: d, height: d)
+        anim.autoresizingMask = [.minXMargin, .maxXMargin, .minYMargin, .maxYMargin]
+        veil.addSubview(anim)
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.10
+            veil.animator().alphaValue = 1
+        }
+        anim.play { [weak self] in
+            guard let self else { completion(); return }
+            NSAnimationContext.runAnimationGroup({ context in
+                context.duration = 0.12
+                self.copyVeil?.animator().alphaValue = 0
+            }, completionHandler: {
+                self.copyVeil?.removeFromSuperview()
+                self.copyVeil = nil
+                completion()
+            })
+        }
+    }
 
     init(store: ClipboardHistoryStore) {
         self.store = store
@@ -762,7 +809,6 @@ final class ClipboardCardView: NSView {
     private var isCopied = false
     private var isDeletionMode = false
     private var isSelectedForDeletion = false
-    private var successView: SuccessAnimationView?
     private var dragStart: CGPoint?
     private var isDragging = false
     private let dragSlop: CGFloat = 4
@@ -821,13 +867,13 @@ final class ClipboardCardView: NSView {
     override func mouseEntered(with event: NSEvent) {
         isHovering = true
         needsDisplay = true
-        guard !isDeletionMode, successView == nil else { return }
+        guard !isDeletionMode, dockWindow?.isCopyAnimating != true else { return }
         raiseShadow(true)
         updateTilt(at: convert(event.locationInWindow, from: nil), animated: true)
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard isHovering, !isDeletionMode, successView == nil else { return }
+        guard isHovering, !isDeletionMode, dockWindow?.isCopyAnimating != true else { return }
         updateTilt(at: convert(event.locationInWindow, from: nil), animated: false)
     }
 
@@ -904,7 +950,7 @@ final class ClipboardCardView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard !isDeletionMode, let start = dragStart, successView == nil else { return }
+        guard !isDeletionMode, let start = dragStart, dockWindow?.isCopyAnimating != true else { return }
         let dx = event.locationInWindow.x - start.x
         let dy = event.locationInWindow.y - start.y   // 上拖为正
         if !isDragging {
@@ -997,25 +1043,9 @@ final class ClipboardCardView: NSView {
 
     private func performCopyAndClose() {
         // 防重入：动画播放期间忽略再次触发（也避免重复复制）。
-        guard successView == nil else { return }
-        isCopied = true
-        needsDisplay = true
-        displayIfNeeded()
+        guard let dock = dockWindow, !dock.isCopyAnimating else { return }
         store.restore(item)   // 复制是瞬时的；下面的转圈→对号仅作反馈动效。
-        playCopySuccess()
-    }
-
-    // 点击后在卡片正中播放「转圈→绿色对号」，动画自然结束再收起 Dock。
-    private func playCopySuccess() {
-        let diameter: CGFloat = 46
-        let view = SuccessAnimationView(diameter: diameter, accent: .dockAccent)
-        view.frame = CGRect(x: bounds.midX - diameter / 2, y: bounds.midY - diameter / 2,
-                            width: diameter, height: diameter)
-        addSubview(view)
-        successView = view
-        view.play { [weak self] in
-            self?.dockWindow?.hideDock()
-        }
+        dock.playCopySuccess { [weak dock] in dock?.hideDock() }
     }
 
     private var feedbackAnchor: CGPoint {
