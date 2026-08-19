@@ -17,6 +17,7 @@ SOURCES=(
   "$ROOT/Sources/ClipboardHistoryStore.swift"
   "$ROOT/Sources/ClipboardDockSelectionState.swift"
   "$ROOT/Sources/ClipboardDockFeedbackWindow.swift"
+  "$ROOT/Sources/SuccessAnimationView.swift"
   "$ROOT/Sources/ClipboardDockEditorPanel.swift"
   "$ROOT/Sources/CaptureService.swift"
   "$ROOT/Sources/RegionSelectionWindow.swift"

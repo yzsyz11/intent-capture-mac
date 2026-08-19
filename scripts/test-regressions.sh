@@ -124,8 +124,8 @@ require_pattern "material = \\.underWindowBackground" "$CLIPBOARD_DOCK" \
 require_pattern "ClipboardPreviewButton" "$CLIPBOARD_DOCK" \
   "clipboard cards must expose a visible preview button"
 
-require_pattern "已复制 ·" "$CLIPBOARD_DOCK" \
-  "clipboard copy feedback must state success next to the dock"
+require_pattern "SuccessAnimationView" "$CLIPBOARD_DOCK" \
+  "clipboard copy must play the on-card spinner→checkmark success animation"
 
 require_pattern "func performCopyAndClose\\(\\)" "$CLIPBOARD_DOCK" \
   "a single click on a card must copy the item and dismiss the dock"

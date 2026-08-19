@@ -762,6 +762,7 @@ final class ClipboardCardView: NSView {
     private var isCopied = false
     private var isDeletionMode = false
     private var isSelectedForDeletion = false
+    private var successView: SuccessAnimationView?
     var isKeyboardFocused = false {
         didSet { if oldValue != isKeyboardFocused { needsDisplay = true } }
     }
@@ -871,16 +872,26 @@ final class ClipboardCardView: NSView {
     }
 
     private func performCopyAndClose() {
+        // 防重入：动画播放期间忽略再次触发（也避免重复复制）。
+        guard successView == nil else { return }
         isCopied = true
         needsDisplay = true
         displayIfNeeded()
-        store.restore(item)
-        ClipboardDockFeedback.show(
-            message: "已复制 · \(item.kind.categoryTitle)",
-            tone: .success,
-            anchor: feedbackAnchor
-        )
-        dockWindow?.hideDock()
+        store.restore(item)   // 复制是瞬时的；下面的转圈→对号仅作反馈动效。
+        playCopySuccess()
+    }
+
+    // 点击后在卡片正中播放「转圈→绿色对号」，动画自然结束再收起 Dock。
+    private func playCopySuccess() {
+        let diameter: CGFloat = 46
+        let view = SuccessAnimationView(diameter: diameter, accent: .dockAccent)
+        view.frame = CGRect(x: bounds.midX - diameter / 2, y: bounds.midY - diameter / 2,
+                            width: diameter, height: diameter)
+        addSubview(view)
+        successView = view
+        view.play { [weak self] in
+            self?.dockWindow?.hideDock()
+        }
     }
 
     private var feedbackAnchor: CGPoint {
