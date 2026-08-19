@@ -804,7 +804,7 @@ final class ClipboardCardView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach { removeTrackingArea($0) }
-        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self))
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways], owner: self))
     }
 
     override func layout() {
@@ -817,11 +817,21 @@ final class ClipboardCardView: NSView {
     override func mouseEntered(with event: NSEvent) {
         isHovering = true
         needsDisplay = true
+        guard !isDeletionMode, successView == nil else { return }
+        raiseShadow(true)
+        updateTilt(at: convert(event.locationInWindow, from: nil), animated: true)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard isHovering, !isDeletionMode, successView == nil else { return }
+        updateTilt(at: convert(event.locationInWindow, from: nil), animated: false)
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovering = false
         needsDisplay = true
+        raiseShadow(false)
+        resetTilt()
     }
 
     // 滚动时卡片从光标下滑过，AppKit 在惯性/程序化滚动下不保证发 mouseExited，
@@ -830,6 +840,49 @@ final class ClipboardCardView: NSView {
         guard isHovering else { return }
         isHovering = false
         needsDisplay = true
+        raiseShadow(false)
+        resetTilt()
+    }
+
+    // 整卡跟随鼠标做轻微 3D 倾斜 + 微抬 + 阴影，营造漂浮感（不拆卡片结构）。
+    private let maxTilt: CGFloat = 7 * .pi / 180
+    private let hoverScale: CGFloat = 1.04
+
+    private func updateTilt(at point: CGPoint, animated: Bool) {
+        guard let layer, bounds.width > 0, bounds.height > 0 else { return }
+        let nx = (point.x / bounds.width) * 2 - 1         // -1(左) … 1(右)
+        let ny = (point.y / bounds.height) * 2 - 1        // -1(下) … 1(上)
+        var t = CATransform3DIdentity
+        t.m34 = -1 / 600                                  // 透视
+        t = CATransform3DRotate(t, -maxTilt * ny, 1, 0, 0) // 光标上下 → 绕 X（朝光标翘）
+        t = CATransform3DRotate(t, maxTilt * nx, 0, 1, 0)  // 光标左右 → 绕 Y
+        t = CATransform3DScale(t, hoverScale, hoverScale, 1)
+        CATransaction.begin()
+        CATransaction.setDisableActions(!animated)
+        if animated { CATransaction.setAnimationDuration(0.12) }
+        layer.transform = t
+        CATransaction.commit()
+    }
+
+    private func resetTilt() {
+        guard let layer else { return }
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.22)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+        layer.transform = CATransform3DIdentity
+        CATransaction.commit()
+    }
+
+    private func raiseShadow(_ up: Bool) {
+        guard let layer else { return }
+        layer.shadowColor = NSColor.black.cgColor
+        layer.shadowPath = CGPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), cornerWidth: 10, cornerHeight: 10, transform: nil)
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.18)
+        layer.shadowOpacity = up ? 0.35 : 0
+        layer.shadowRadius = up ? 9 : 0
+        layer.shadowOffset = up ? CGSize(width: 0, height: -3) : .zero
+        CATransaction.commit()
     }
 
     override func resetCursorRects() {
@@ -1163,6 +1216,8 @@ final class DockTextButton: NSButton {
 }
 
 final class DockSymbolButton: NSButton {
+    private var isHovered = false
+
     init(symbolName: String, tooltip: String) {
         super.init(frame: .zero)
         title = ""
@@ -1179,11 +1234,41 @@ final class DockSymbolButton: NSButton {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        contentTintColor = .labelColor
+        animateScale(1.12)
+        needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        contentTintColor = .secondaryLabelColor
+        animateScale(1.0)
+        needsDisplay = true
+    }
+
+    private func animateScale(_ scale: CGFloat) {
+        guard let layer else { return }
+        CATransaction.begin()
+        CATransaction.setAnimationDuration(0.12)
+        CATransaction.setAnimationTimingFunction(CAMediaTimingFunction(name: .easeOut))
+        layer.transform = CATransform3DMakeScale(scale, scale, 1)
+        CATransaction.commit()
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         let path = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 12, yRadius: 12)
-        NSColor.white.withAlphaComponent(isHighlighted ? 0.24 : 0.12).setFill()
+        let fillAlpha: CGFloat = isHighlighted ? 0.30 : (isHovered ? 0.22 : 0.10)
+        NSColor.white.withAlphaComponent(fillAlpha).setFill()
         path.fill()
-        NSColor.white.withAlphaComponent(0.22).setStroke()
+        NSColor.white.withAlphaComponent(isHovered ? 0.30 : 0.22).setStroke()
         path.lineWidth = 1
         path.stroke()
         super.draw(dirtyRect)

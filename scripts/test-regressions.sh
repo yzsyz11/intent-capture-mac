@@ -127,6 +127,12 @@ require_pattern "ClipboardPreviewButton" "$CLIPBOARD_DOCK" \
 require_pattern "SuccessAnimationView" "$CLIPBOARD_DOCK" \
   "clipboard copy must play the on-card spinner→checkmark success animation"
 
+require_pattern "func updateTilt\\(" "$CLIPBOARD_DOCK" \
+  "cards must tilt in 3D toward the cursor on hover for a floating feel"
+
+require_pattern "CATransform3DMakeScale" "$CLIPBOARD_DOCK" \
+  "dock icon buttons must give a hover scale/press response"
+
 require_pattern "func performCopyAndClose\\(\\)" "$CLIPBOARD_DOCK" \
   "a single click on a card must copy the item and dismiss the dock"
 
