@@ -2,7 +2,7 @@ import AppKit
 import ApplicationServices
 
 enum HomeSection: CaseIterable {
-    case action, hotkeys, clipboard, mouse, appearance, saving
+    case action, hotkeys, clipboard, mouse, translation, appearance, saving
 
     var title: String {
         switch self {
@@ -10,6 +10,7 @@ enum HomeSection: CaseIterable {
         case .hotkeys: return "快捷键"
         case .clipboard: return "剪贴板拓展坞"
         case .mouse: return "鼠标中键"
+        case .translation: return "翻译"
         case .appearance: return "外观"
         case .saving: return "默认与保存"
         }
@@ -21,6 +22,7 @@ enum HomeSection: CaseIterable {
         case .hotkeys: return "keyboard"
         case .clipboard: return "clipboard"
         case .mouse: return "computermouse"
+        case .translation: return "character.bubble"
         case .appearance: return "paintpalette"
         case .saving: return "folder"
         }
@@ -73,6 +75,7 @@ final class HomeWindowView: NSView {
     private let hotkeySection: HotkeySectionView
     private let clipboardSection: ClipboardSectionView
     private let mouseSection: MouseSectionView
+    private let translationSection: TranslationSectionView
     private let appearanceSection: AppearanceSectionView
     private let saveSection: SaveSectionView
     private var sections: [HomeSection: NSView] = [:]
@@ -85,6 +88,7 @@ final class HomeWindowView: NSView {
         hotkeySection = HotkeySectionView(settings: settings, onSave: onSettingsSaved)
         clipboardSection = ClipboardSectionView(settings: settings, onSave: onSettingsSaved)
         mouseSection = MouseSectionView(settings: settings, onSave: onSettingsSaved)
+        translationSection = TranslationSectionView(settings: settings, onSave: onSettingsSaved)
         appearanceSection = AppearanceSectionView(settings: settings)
         saveSection = SaveSectionView(settings: settings, onSave: onSettingsSaved, onActionChanged: {})
         super.init(frame: CGRect(x: 0, y: 0, width: 680, height: 420))
@@ -117,6 +121,7 @@ final class HomeWindowView: NSView {
             .hotkeys: hotkeySection,
             .clipboard: clipboardSection,
             .mouse: mouseSection,
+            .translation: translationSection,
             .appearance: appearanceSection,
             .saving: saveSection
         ]
@@ -746,6 +751,267 @@ final class SaveSectionView: NSView {
         settings.colorFormat = colorFormat.titleOfSelectedItem ?? "HEX"
         onSave()
         Toast.show("设置已保存")
+    }
+}
+
+/// 翻译设置：引擎选择 + DeepSeek API Key + 目标语言。
+final class TranslationSectionView: NSView {
+    private let engineToggle = EngineToggleView(frame: .zero)
+    private let apiKey = SecretKeyField(frame: .zero)
+    private let keyLabel = NSTextField(labelWithString: "API Key")
+    private let targetLanguage = NSPopUpButton()
+    private let hint = NSTextField(labelWithString: "")
+    private let card = GlassSectionCard(frame: CGRect(x: 28, y: 28, width: 436, height: 236))
+    private let settings: AppSettings
+    private let onSave: () -> Void
+
+    private static let languages = ["中文（简体）", "中文（繁体）", "English", "日本語", "한국어"]
+    private let keyRowY: CGFloat = 134
+
+    override var isFlipped: Bool { true }
+
+    init(settings: AppSettings, onSave: @escaping () -> Void) {
+        self.settings = settings
+        self.onSave = onSave
+        super.init(frame: CGRect(x: 0, y: 0, width: 492, height: 420))
+        addSubview(card)
+        sectionTitle("区域翻译", in: card)
+
+        engineToggle.select(settings.translationEngine)
+        engineToggle.onChange = { [weak self] value in
+            guard let self else { return }
+            self.settings.translationEngine = value
+            self.relayout()
+            self.onSave()
+            Toast.show("已切换到\(value.toggleTitle)")
+        }
+
+        var titles = Self.languages
+        if !titles.contains(settings.translationTargetLanguage) {
+            titles.insert(settings.translationTargetLanguage, at: 0)
+        }
+        targetLanguage.addItems(withTitles: titles)
+        targetLanguage.selectItem(withTitle: settings.translationTargetLanguage)
+        targetLanguage.target = self
+        targetLanguage.action = #selector(saveClick)
+
+        apiKey.stringValue = settings.deepSeekAPIKey
+        apiKey.placeholderString = "粘贴 API Key（sk-…）"
+        apiKey.onCommit = { [weak self] in self?.saveClick() }
+
+        placeRow(in: card, title: "翻译引擎", control: engineToggle, y: 48, width: 436, height: 34)
+        placeRow(in: card, title: "目标语言", control: targetLanguage, y: 94, width: 436)
+
+        // API Key 行手动布局，便于按引擎显隐。
+        keyLabel.font = .systemFont(ofSize: 12)
+        keyLabel.textColor = .secondaryLabelColor
+        keyLabel.frame = CGRect(x: 16, y: keyRowY + 6, width: 120, height: 16)
+        card.addSubview(keyLabel)
+        apiKey.frame = CGRect(x: 152, y: keyRowY, width: 436 - 152 - 16, height: 28)
+        card.addSubview(apiKey)
+
+        hint.font = .systemFont(ofSize: 11)
+        hint.textColor = .tertiaryLabelColor
+        hint.lineBreakMode = .byWordWrapping
+        hint.maximumNumberOfLines = 2
+        card.addSubview(hint)
+
+        relayout()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    /// 按当前引擎显隐 API Key 行，并把说明文字挪到最后一行下方。
+    private func relayout() {
+        let engine = settings.translationEngine
+        let needsKey = engine.needsAPIKey
+        keyLabel.isHidden = !needsKey
+        apiKey.isHidden = !needsKey
+        let hintY = (needsKey ? keyRowY + 28 + 12 : keyRowY) + 2
+        hint.frame = CGRect(x: 16, y: hintY, width: 404, height: 32)
+        hint.stringValue = "\(engine.subtitle)。选“区域翻译”动作框选外文，译文会以毛玻璃覆盖在原文上。"
+    }
+
+    @objc private func saveClick() {
+        settings.deepSeekAPIKey = apiKey.stringValue
+        settings.translationTargetLanguage = targetLanguage.titleOfSelectedItem ?? "中文（简体）"
+        onSave()
+        Toast.show("设置已保存")
+    }
+}
+
+/// 两模式引擎开关：玻璃轨道 + 两段（头像 + 名称），选中段用主题色填充。
+final class EngineToggleView: NSView {
+    var onChange: ((TranslationEngine) -> Void)?
+
+    private let order: [TranslationEngine] = [.apple, .deepseek]
+    private var segments: [NSButton] = []
+    private var current: TranslationEngine = .apple
+    private var accent: NSColor { AppSettings.shared.accentColor }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 9
+        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.06).cgColor
+        layer?.borderWidth = 1
+        layer?.borderColor = NSColor.white.withAlphaComponent(0.16).cgColor
+        build()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    private func build() {
+        let stack = NSStackView()
+        stack.orientation = .horizontal
+        stack.distribution = .fillEqually
+        stack.spacing = 4
+        stack.edgeInsets = NSEdgeInsets(top: 3, left: 3, bottom: 3, right: 3)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor),
+            stack.topAnchor.constraint(equalTo: topAnchor),
+            stack.bottomAnchor.constraint(equalTo: bottomAnchor)
+        ])
+        for (index, engine) in order.enumerated() {
+            let button = NSButton(title: "", target: self, action: #selector(tap(_:)))
+            button.image = NSImage(systemSymbolName: engine.avatarSymbol, accessibilityDescription: nil)
+            button.imagePosition = .imageLeading
+            button.isBordered = false
+            button.bezelStyle = .regularSquare
+            button.wantsLayer = true
+            button.layer?.cornerRadius = 7
+            button.tag = index
+            segments.append(button)
+            stack.addArrangedSubview(button)
+        }
+    }
+
+    func select(_ engine: TranslationEngine) {
+        current = engine
+        refresh()
+    }
+
+    @objc private func tap(_ sender: NSButton) {
+        let engine = order[sender.tag]
+        guard engine != current else { return }
+        current = engine
+        refresh()
+        onChange?(engine)
+    }
+
+    private func refresh() {
+        for (index, button) in segments.enumerated() {
+            let engine = order[index]
+            let on = engine == current
+            button.layer?.backgroundColor = on ? accent.withAlphaComponent(0.9).cgColor : NSColor.clear.cgColor
+            button.contentTintColor = on ? .white : .secondaryLabelColor
+            button.attributedTitle = NSAttributedString(string: " " + engine.toggleTitle, attributes: [
+                .foregroundColor: on ? NSColor.white : NSColor.secondaryLabelColor,
+                .font: NSFont.systemFont(ofSize: 12, weight: on ? .semibold : .medium)
+            ])
+        }
+    }
+}
+
+/// 带小眼睛显隐的 API Key 输入框：默认遮住，点眼睛切换明文。
+final class SecretKeyField: NSView {
+    var onCommit: (() -> Void)?
+    var placeholderString: String? {
+        didSet {
+            plain.placeholderString = placeholderString
+            secure.placeholderString = placeholderString
+        }
+    }
+    var stringValue: String {
+        get { revealed ? plain.stringValue : secure.stringValue }
+        set { plain.stringValue = newValue; secure.stringValue = newValue }
+    }
+
+    private let plain = GlassTextField()
+    private let secure = GlassSecureField()
+    private let eye = NSButton()
+    private var revealed = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        build()
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    private func build() {
+        for field in [plain, secure] as [NSTextField] {
+            field.target = self
+            field.action = #selector(committed)
+            field.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(field)
+            NSLayoutConstraint.activate([
+                field.leadingAnchor.constraint(equalTo: leadingAnchor),
+                field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -30),
+                field.topAnchor.constraint(equalTo: topAnchor),
+                field.bottomAnchor.constraint(equalTo: bottomAnchor)
+            ])
+        }
+        plain.isHidden = true
+
+        eye.target = self
+        eye.action = #selector(toggleReveal)
+        eye.isBordered = false
+        eye.bezelStyle = .regularSquare
+        eye.image = NSImage(systemSymbolName: "eye.slash", accessibilityDescription: "显示")
+        eye.contentTintColor = .secondaryLabelColor
+        eye.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(eye)
+        NSLayoutConstraint.activate([
+            eye.trailingAnchor.constraint(equalTo: trailingAnchor),
+            eye.centerYAnchor.constraint(equalTo: centerYAnchor),
+            eye.widthAnchor.constraint(equalToConstant: 26),
+            eye.heightAnchor.constraint(equalToConstant: 22)
+        ])
+    }
+
+    @objc private func committed() { onCommit?() }
+
+    @objc private func toggleReveal() {
+        let value = stringValue
+        revealed.toggle()
+        plain.stringValue = value
+        secure.stringValue = value
+        plain.isHidden = !revealed
+        secure.isHidden = revealed
+        eye.image = NSImage(systemSymbolName: revealed ? "eye" : "eye.slash", accessibilityDescription: nil)
+        window?.makeFirstResponder(revealed ? plain : secure)
+    }
+}
+
+/// 与 GlassTextField 同款玻璃样式的密文输入框。
+final class GlassSecureField: NSSecureTextField {
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setup()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setup()
+    }
+
+    private func setup() {
+        isBordered = false
+        drawsBackground = false
+        focusRingType = .none
+        font = .systemFont(ofSize: 12, weight: .medium)
+        textColor = .labelColor
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.07).cgColor
+        layer?.cornerRadius = 8
+        layer?.borderWidth = 1
+        layer?.borderColor = NSColor.white.withAlphaComponent(0.24).cgColor
     }
 }
 

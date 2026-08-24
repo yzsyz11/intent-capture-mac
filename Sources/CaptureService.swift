@@ -6,6 +6,7 @@ import Vision
 final class CaptureService {
     private let settings = AppSettings.shared
     private var activeSelectionWindow: RegionSelectionWindow?
+    private var activeTranslationOverlay: TranslationOverlayWindow?
 
     func perform(_ action: CaptureAction) {
         guard activeSelectionWindow == nil else { return }
@@ -38,6 +39,8 @@ final class CaptureService {
             save(image, copyAfterSave: true)
         case .ocrCopy:
             recognize(image)
+        case .translate:
+            translate(rect: rect, image: image)
         case .pickColor:
             break
         }
@@ -127,8 +130,24 @@ final class CaptureService {
     }
 
     private func recognize(_ image: NSImage) {
+        recognizeLines(image) { lines in
+            let text = lines.map(\.text).joined(separator: "\n")
+            guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                Toast.show("未识别到文字")
+                return
+            }
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+            let preview = lines.first(where: { !$0.text.isEmpty })?.text ?? text
+            let truncated = preview.count > 44 ? String(preview.prefix(44)) + "…" : preview
+            Toast.show("OCR 已复制：\(truncated)")
+        }
+    }
+
+    /// 识别文字并保留每行归一化位置（Vision 坐标，左下原点）；`completion` 在主线程回调。
+    private func recognizeLines(_ image: NSImage, completion: @escaping ([OCRLine]) -> Void) {
         guard let cgImage = image.ocrPreparedCGImage else {
-            Toast.show("OCR 失败")
+            DispatchQueue.main.async { Toast.show("OCR 失败") }
             return
         }
 
@@ -137,20 +156,12 @@ final class CaptureService {
                 DispatchQueue.main.async { Toast.show("OCR 失败：\(error.localizedDescription)") }
                 return
             }
-            let text = (request.results as? [VNRecognizedTextObservation])?
-                .compactMap { $0.topCandidates(1).first?.string }
-                .joined(separator: "\n") ?? ""
-            DispatchQueue.main.async {
-                guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                    Toast.show("未识别到文字")
-                    return
-                }
-                NSPasteboard.general.clearContents()
-                NSPasteboard.general.setString(text, forType: .string)
-                let preview = text.components(separatedBy: .newlines).first(where: { !$0.isEmpty }) ?? text
-                let truncated = preview.count > 44 ? String(preview.prefix(44)) + "…" : preview
-                Toast.show("OCR 已复制：\(truncated)")
-            }
+            let lines = (request.results as? [VNRecognizedTextObservation])?
+                .compactMap { obs -> OCRLine? in
+                    guard let text = obs.topCandidates(1).first?.string, !text.isEmpty else { return nil }
+                    return OCRLine(text: text, box: obs.boundingBox)
+                } ?? []
+            DispatchQueue.main.async { completion(lines) }
         }
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
@@ -162,6 +173,59 @@ final class CaptureService {
         DispatchQueue.global(qos: .userInitiated).async {
             try? VNImageRequestHandler(cgImage: cgImage).perform([request])
         }
+    }
+
+    private func translate(rect: CGRect, image: NSImage) {
+        let settings = self.settings
+        let translator: Translator
+        switch settings.translationEngine {
+        case .deepseek:
+            let deepseek = DeepSeekTranslator(apiKey: settings.deepSeekAPIKey)
+            guard deepseek.isAvailable else {
+                Toast.show("未配置 DeepSeek API Key，请到设置 → 翻译中填写")
+                return
+            }
+            translator = deepseek
+        case .apple:
+            if #available(macOS 15.0, *) {
+                translator = AppleTranslator()
+            } else {
+                Toast.show("Apple 原生翻译需要 macOS 15 或更新版本，请改用自定义大模型")
+                return
+            }
+        }
+
+        recognizeLines(image) { lines in
+            let sources = lines.map(\.text)
+            guard !sources.isEmpty else {
+                Toast.show("未识别到文字")
+                return
+            }
+            Toast.show("翻译中…")
+            let target = settings.translationTargetLanguage
+            let boxes = lines.map(\.box)
+            // NSImage 非 Sendable，但只在主线程使用；装箱后跨 Task 边界。
+            let bg = UncheckedSendableBox(image)
+            Task {
+                do {
+                    let translations = try await translator.translate(sources, to: target)
+                    let translatedLines = zip(boxes, translations).map { OCRLine(text: $1, box: $0) }
+                    await MainActor.run {
+                        self.showTranslationOverlay(rect: rect, background: bg.value, lines: translatedLines)
+                    }
+                } catch {
+                    await MainActor.run {
+                        Toast.show("翻译失败：\(error.localizedDescription)")
+                    }
+                }
+            }
+        }
+    }
+
+    private func showTranslationOverlay(rect: CGRect, background: NSImage, lines: [OCRLine]) {
+        let overlay = TranslationOverlayWindow(regionRect: rect, background: background, lines: lines)
+        activeTranslationOverlay = overlay
+        overlay.show()
     }
 
     private func sampleColor(at point: CGPoint) -> NSColor? {

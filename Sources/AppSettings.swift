@@ -84,6 +84,33 @@ final class AppSettings {
         set { accentHex = newValue.hexString }
     }
 
+    // MARK: - 区域翻译
+
+    /// 翻译引擎：`deepseek`（在线，需 key）/ `apple`（原生，macOS 15+，即将支持）。默认 DeepSeek。
+    var translationEngine: TranslationEngine {
+        get { TranslationEngine(rawValue: defaults.string(forKey: "translationEngine") ?? "") ?? .deepseek }
+        set { defaults.set(newValue.rawValue, forKey: "translationEngine") }
+    }
+
+    /// 目标语言（直接作为提示词里的语言名，默认简体中文）。
+    var translationTargetLanguage: String {
+        get { defaults.string(forKey: "translationTargetLanguage") ?? "中文（简体）" }
+        set { defaults.set(newValue, forKey: "translationTargetLanguage") }
+    }
+
+    /// DeepSeek API Key 存 Keychain，不落明文 UserDefaults。
+    var deepSeekAPIKey: String {
+        get { KeychainStore.read(account: "deepseek.apiKey") ?? "" }
+        set {
+            let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty {
+                KeychainStore.delete(account: "deepseek.apiKey")
+            } else {
+                KeychainStore.write(trimmed, account: "deepseek.apiKey")
+            }
+        }
+    }
+
     func buildFileURL() throws -> URL {
         try FileManager.default.createDirectory(at: saveDirectory, withIntermediateDirectories: true)
         let formatter = DateFormatter()

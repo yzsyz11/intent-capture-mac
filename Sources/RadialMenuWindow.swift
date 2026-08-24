@@ -422,6 +422,7 @@ private extension CaptureAction {
         case .screenshotSave: return "square.and.arrow.down"
         case .screenshotSaveAndCopy: return "square.and.arrow.down.on.square"
         case .ocrCopy: return "text.viewfinder"
+        case .translate: return "character.bubble"
         case .pickColor: return "eyedropper"
         }
     }
