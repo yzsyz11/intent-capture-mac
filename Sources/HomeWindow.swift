@@ -837,6 +837,7 @@ final class TranslationSectionView: NSView {
     @objc private func saveClick() {
         settings.deepSeekAPIKey = apiKey.stringValue
         settings.translationTargetLanguage = targetLanguage.titleOfSelectedItem ?? "中文（简体）"
+        engineToggle.reload()   // 填完 Key 后开关切换成模型名 + logo
         onSave()
         Toast.show("设置已保存")
     }
@@ -877,9 +878,8 @@ final class EngineToggleView: NSView {
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor)
         ])
-        for (index, engine) in order.enumerated() {
+        for index in order.indices {
             let button = NSButton(title: "", target: self, action: #selector(tap(_:)))
-            button.image = NSImage(systemSymbolName: engine.avatarSymbol, accessibilityDescription: nil)
             button.imagePosition = .imageLeading
             button.isBordered = false
             button.bezelStyle = .regularSquare
@@ -896,6 +896,9 @@ final class EngineToggleView: NSView {
         refresh()
     }
 
+    /// 外部（如填完 Key）触发重刷，让「自定义大模型」段切换成模型名 + logo。
+    func reload() { refresh() }
+
     @objc private func tap(_ sender: NSButton) {
         let engine = order[sender.tag]
         guard engine != current else { return }
@@ -910,11 +913,34 @@ final class EngineToggleView: NSView {
             let on = engine == current
             button.layer?.backgroundColor = on ? accent.withAlphaComponent(0.9).cgColor : NSColor.clear.cgColor
             button.contentTintColor = on ? .white : .secondaryLabelColor
-            button.attributedTitle = NSAttributedString(string: " " + engine.toggleTitle, attributes: [
+            let (title, image) = display(for: engine)
+            button.image = image
+            button.attributedTitle = NSAttributedString(string: " " + title, attributes: [
                 .foregroundColor: on ? NSColor.white : NSColor.secondaryLabelColor,
                 .font: NSFont.systemFont(ofSize: 12, weight: on ? .semibold : .medium)
             ])
         }
+    }
+
+    /// 「自定义大模型」在填了 Key 后显示具体模型名 + 品牌 logo。
+    private func display(for engine: TranslationEngine) -> (String, NSImage?) {
+        switch engine {
+        case .apple:
+            return ("Apple 原生", symbolImage("apple.logo"))
+        case .deepseek:
+            if !AppSettings.shared.deepSeekAPIKey.isEmpty {
+                let logo = TranslationAsset.image("deepseek1")
+                logo?.isTemplate = false   // 保留蓝鲸原色
+                logo?.size = NSSize(width: 18, height: 16)
+                return ("DeepSeek", logo)
+            }
+            return ("自定义大模型", symbolImage("sparkles"))
+        }
+    }
+
+    private func symbolImage(_ name: String) -> NSImage? {
+        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold))
     }
 }
 
