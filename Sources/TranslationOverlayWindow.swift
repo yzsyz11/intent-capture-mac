@@ -73,6 +73,8 @@ final class TranslationOverlayView: NSView {
     private let background: NSImage?
     private let lines: [OCRLine]
     private let accent = AppSettings.shared.accentColor
+    private var showingOriginal = false
+    private weak var compareButton: OverlayPillButton?
 
     init(frame: CGRect, contentRect: CGRect, toolbarRect: CGRect, background: NSImage?, lines: [OCRLine]) {
         self.contentRect = contentRect
@@ -97,15 +99,24 @@ final class TranslationOverlayView: NSView {
     // MARK: - Toolbar
 
     private func buildToolbar() {
-        let copy = OverlayPillButton(title: "复制译文", symbol: "doc.on.doc", accent: accent)
+        // 图标为 SF Symbol 占位；如需与设计稿一致的原图，放进 Assets 后替换。
+        let compare = OverlayPillButton(symbol: "rectangle.lefthalf.filled", accent: accent)
+        compare.target = self
+        compare.action = #selector(toggleOriginal)
+        compare.toolTip = "对照原文（再按切回译文）"
+        compareButton = compare
+
+        let copy = OverlayPillButton(symbol: "doc.on.doc", accent: accent)
         copy.target = self
         copy.action = #selector(copyTranslations)
+        copy.toolTip = "复制译文"
 
-        let close = OverlayPillButton(title: "关闭", symbol: "xmark", accent: accent)
+        let close = OverlayPillButton(symbol: "xmark.circle.fill", accent: accent)
         close.target = self
         close.action = #selector(closeTapped)
+        close.toolTip = "关闭"
 
-        let bar = NSStackView(views: [copy, close])
+        let bar = NSStackView(views: [compare, copy, close])
         bar.orientation = .horizontal
         bar.spacing = 8
         bar.translatesAutoresizingMaskIntoConstraints = false
@@ -117,6 +128,13 @@ final class TranslationOverlayView: NSView {
     }
 
     // MARK: - Actions
+
+    /// 对照：隐藏译文卡片露出原文截图，再按切回。
+    @objc private func toggleOriginal() {
+        showingOriginal.toggle()
+        compareButton?.setActive(showingOriginal)
+        needsDisplay = true
+    }
 
     @objc private func copyTranslations() {
         let text = lines.map(\.text).filter { !$0.isEmpty }.joined(separator: "\n")
@@ -144,6 +162,9 @@ final class TranslationOverlayView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         // 底图：选区原始截图，让译文看起来盖在原文上。
         background?.draw(in: contentRect)
+
+        // 对照模式下只显示原文（不画译文卡片）。
+        guard !showingOriginal else { return }
 
         let W = contentRect.width
         let H = contentRect.height
@@ -199,31 +220,35 @@ final class TranslationOverlayView: NSView {
     }
 }
 
-/// 覆盖层工具条上的 App 风格毛玻璃胶囊按钮，带 hover 高亮。
+/// 覆盖层工具条上的纯图标毛玻璃胶囊按钮：深色磨砂底 + 白图标，带 hover 与激活态。
 final class OverlayPillButton: NSButton {
     private let accent: NSColor
     private let blur = NSVisualEffectView()
+    private var active = false
 
-    init(title: String, symbol: String, accent: NSColor) {
+    init(symbol: String, accent: NSColor) {
         self.accent = accent
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         isBordered = false
         bezelStyle = .regularSquare
-        imagePosition = .imageLeading
-        image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
+        imagePosition = .imageOnly
+        image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold))
         imageScaling = .scaleProportionallyDown
         contentTintColor = .white
         wantsLayer = true
 
+        // 深色磨砂：在透明覆盖窗上渲染成深色半透明底，白图标才清晰。
         blur.material = .hudWindow
         blur.blendingMode = .behindWindow
         blur.state = .active
+        blur.appearance = NSAppearance(named: .darkAqua)
         blur.wantsLayer = true
-        blur.layer?.cornerRadius = 14
+        blur.layer?.cornerRadius = 9
         blur.layer?.masksToBounds = true
         blur.layer?.borderWidth = 1
-        blur.layer?.borderColor = accent.withAlphaComponent(0.55).cgColor
+        blur.layer?.borderColor = accent.withAlphaComponent(0.5).cgColor
         blur.translatesAutoresizingMaskIntoConstraints = false
         addSubview(blur, positioned: .below, relativeTo: nil)
         NSLayoutConstraint.activate([
@@ -231,22 +256,18 @@ final class OverlayPillButton: NSButton {
             blur.trailingAnchor.constraint(equalTo: trailingAnchor),
             blur.topAnchor.constraint(equalTo: topAnchor),
             blur.bottomAnchor.constraint(equalTo: bottomAnchor),
+            widthAnchor.constraint(equalToConstant: 34),
             heightAnchor.constraint(equalToConstant: 28)
-        ])
-
-        attributedTitle = NSAttributedString(string: " " + title, attributes: [
-            .foregroundColor: NSColor.white,
-            .font: NSFont.systemFont(ofSize: 12, weight: .medium)
         ])
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
-    override var intrinsicContentSize: NSSize {
-        var size = super.intrinsicContentSize
-        size.width += 26   // 左右内边距，避免文字贴边
-        size.height = 28
-        return size
+    /// 激活态（用于「对照」按钮按下时高亮）。
+    func setActive(_ on: Bool) {
+        active = on
+        blur.layer?.backgroundColor = on ? accent.withAlphaComponent(0.5).cgColor : NSColor.clear.cgColor
+        blur.layer?.borderColor = (on ? accent : accent.withAlphaComponent(0.5)).cgColor
     }
 
     override func updateTrackingAreas() {
@@ -258,12 +279,14 @@ final class OverlayPillButton: NSButton {
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 
     override func mouseEntered(with event: NSEvent) {
+        guard !active else { return }
         blur.layer?.backgroundColor = accent.withAlphaComponent(0.30).cgColor
         blur.layer?.borderColor = accent.withAlphaComponent(0.9).cgColor
     }
 
     override func mouseExited(with event: NSEvent) {
+        guard !active else { return }
         blur.layer?.backgroundColor = NSColor.clear.cgColor
-        blur.layer?.borderColor = accent.withAlphaComponent(0.55).cgColor
+        blur.layer?.borderColor = accent.withAlphaComponent(0.5).cgColor
     }
 }
