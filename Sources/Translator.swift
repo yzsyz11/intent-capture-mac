@@ -73,6 +73,45 @@ enum TranslationError: LocalizedError {
     }
 }
 
+// MARK: - 调试日志
+
+/// 翻译调试日志：开关开启时把消息写进 `~/Library/Logs/IntentCapture/translation.log` 并 NSLog。
+enum TranslationDebugLog {
+    static var isEnabled: Bool { AppSettings.shared.translationDebugLogEnabled }
+
+    static var fileURL: URL {
+        let dir = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Logs/IntentCapture", isDirectory: true)
+        return dir.appendingPathComponent("translation.log")
+    }
+
+    static func log(_ message: @autoclosure () -> String) {
+        guard isEnabled else { return }
+        let text = message()
+        NSLog("IntentCapture 翻译: %@", text)
+        append("[\(timestamp())] \(text)\n")
+    }
+
+    private static func append(_ line: String) {
+        let url = fileURL
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard let data = line.data(using: .utf8) else { return }
+        if let handle = try? FileHandle(forWritingTo: url) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            try? handle.close()
+        } else {
+            try? data.write(to: url)
+        }
+    }
+
+    private static func timestamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss.SSS"
+        return formatter.string(from: Date())
+    }
+}
+
 // MARK: - DeepSeek（OpenAI 兼容 /chat/completions，仅用 URLSession，零依赖）
 
 final class DeepSeekTranslator: Translator {
@@ -114,6 +153,7 @@ final class DeepSeekTranslator: Translator {
             ]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        TranslationDebugLog.log("DeepSeek 请求 target=\(target) 行数=\(lines.count) 原文=\(payloadLines)")
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
@@ -121,11 +161,15 @@ final class DeepSeekTranslator: Translator {
         }
         guard http.statusCode == 200 else {
             let msg = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
+            TranslationDebugLog.log("DeepSeek 失败 HTTP \(http.statusCode): \(msg.prefix(400))")
             throw TranslationError.badResponse("HTTP \(http.statusCode) \(msg.prefix(200))")
         }
 
         let content = try Self.extractContent(from: data)
-        return Self.parseLines(from: content, expected: lines.count)
+        TranslationDebugLog.log("DeepSeek 原始返回: \(content)")
+        let result = Self.parseLines(from: content, expected: lines.count)
+        TranslationDebugLog.log("DeepSeek 解析后 \(result.count) 行: \(result)")
+        return result
     }
 
     /// 取出 choices[0].message.content。

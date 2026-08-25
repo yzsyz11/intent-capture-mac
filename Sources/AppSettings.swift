@@ -111,6 +111,12 @@ final class AppSettings {
         }
     }
 
+    /// 翻译调试日志开关：开启后把请求/返回/错误写进日志文件，便于排查错译漏译。
+    var translationDebugLogEnabled: Bool {
+        get { defaults.bool(forKey: "translationDebugLogEnabled") }
+        set { defaults.set(newValue, forKey: "translationDebugLogEnabled") }
+    }
+
     func buildFileURL() throws -> URL {
         try FileManager.default.createDirectory(at: saveDirectory, withIntermediateDirectories: true)
         let formatter = DateFormatter()

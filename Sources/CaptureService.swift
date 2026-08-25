@@ -203,6 +203,7 @@ final class CaptureService {
             }
             Toast.show("翻译中…")
             let target = settings.translationTargetLanguage
+            TranslationDebugLog.log("开始翻译 引擎=\(settings.translationEngine.rawValue) 目标=\(target) OCR=\(sources.count) 行")
             let boxes = lines.map(\.box)
             // NSImage 非 Sendable，但只在主线程使用；装箱后跨 Task 边界。
             let bg = UncheckedSendableBox(image)
@@ -214,6 +215,7 @@ final class CaptureService {
                         self.showTranslationOverlay(rect: rect, background: bg.value, lines: translatedLines)
                     }
                 } catch {
+                    TranslationDebugLog.log("翻译失败: \(error)")
                     await MainActor.run {
                         Toast.show("翻译失败：\(error.localizedDescription)")
                     }

@@ -13,7 +13,10 @@ final class AppleTranslator: Translator {
     func translate(_ lines: [String], to target: String) async throws -> [String] {
         guard !lines.isEmpty else { return [] }
         let language = Self.language(for: target)
-        return try await AppleTranslationBridge.shared.translate(lines, target: language)
+        TranslationDebugLog.log("Apple 翻译 target=\(target) 行数=\(lines.count)")
+        let result = try await AppleTranslationBridge.shared.translate(lines, target: language)
+        TranslationDebugLog.log("Apple 返回 \(result.count) 行: \(result)")
+        return result
     }
 
     /// 目标语言显示名 → `Locale.Language`。源语言交给系统自动检测。

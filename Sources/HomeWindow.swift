@@ -760,8 +760,10 @@ final class TranslationSectionView: NSView {
     private let apiKey = SecretKeyField(frame: .zero)
     private let keyLabel = NSTextField(labelWithString: "API Key")
     private let targetLanguage = NSPopUpButton()
+    private let debugCheck = NSButton(checkboxWithTitle: "调试日志（记录请求/返回，排查错译漏译）", target: nil, action: nil)
+    private let openLogButton = NSButton(title: "打开日志", target: nil, action: nil)
     private let hint = NSTextField(labelWithString: "")
-    private let card = GlassSectionCard(frame: CGRect(x: 28, y: 28, width: 436, height: 236))
+    private let card = GlassSectionCard(frame: CGRect(x: 28, y: 28, width: 436, height: 288))
     private let settings: AppSettings
     private let onSave: () -> Void
 
@@ -810,6 +812,19 @@ final class TranslationSectionView: NSView {
         apiKey.frame = CGRect(x: 152, y: keyRowY, width: 436 - 152 - 16, height: 28)
         card.addSubview(apiKey)
 
+        debugCheck.state = settings.translationDebugLogEnabled ? .on : .off
+        debugCheck.font = .systemFont(ofSize: 12)
+        debugCheck.target = self
+        debugCheck.action = #selector(saveClick)
+        card.addSubview(debugCheck)
+
+        openLogButton.bezelStyle = .rounded
+        openLogButton.controlSize = .small
+        openLogButton.font = .systemFont(ofSize: 11)
+        openLogButton.target = self
+        openLogButton.action = #selector(openLog)
+        card.addSubview(openLogButton)
+
         hint.font = .systemFont(ofSize: 11)
         hint.textColor = .tertiaryLabelColor
         hint.lineBreakMode = .byWordWrapping
@@ -823,23 +838,42 @@ final class TranslationSectionView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    /// 按当前引擎显隐 API Key 行，并把说明文字挪到最后一行下方。
+    /// 按当前引擎显隐 API Key 行，并把调试行/说明文字挪到最后一行下方。
     private func relayout() {
         let engine = settings.translationEngine
         let needsKey = engine.needsAPIKey
         keyLabel.isHidden = !needsKey
         apiKey.isHidden = !needsKey
-        let hintY = (needsKey ? keyRowY + 28 + 12 : keyRowY) + 2
-        hint.frame = CGRect(x: 16, y: hintY, width: 404, height: 32)
+
+        let debugY = needsKey ? keyRowY + 28 + 12 : keyRowY
+        debugCheck.frame = CGRect(x: 16, y: debugY, width: 300, height: 20)
+        openLogButton.frame = CGRect(x: 324, y: debugY - 2, width: 96, height: 24)
+
+        hint.frame = CGRect(x: 16, y: debugY + 30, width: 404, height: 32)
         hint.stringValue = "\(engine.subtitle)。选“区域翻译”动作框选外文，译文会以毛玻璃覆盖在原文上。"
     }
 
     @objc private func saveClick() {
         settings.deepSeekAPIKey = apiKey.stringValue
         settings.translationTargetLanguage = targetLanguage.titleOfSelectedItem ?? "中文（简体）"
+        settings.translationDebugLogEnabled = (debugCheck.state == .on)
         engineToggle.reload()   // 填完 Key 后开关切换成模型名 + logo
         onSave()
         Toast.show("设置已保存")
+    }
+
+    /// 在访达中定位翻译日志文件（不存在则先建目录）。
+    @objc private func openLog() {
+        let url = TranslationDebugLog.fileURL
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            if !settings.translationDebugLogEnabled {
+                Toast.show("调试日志未开启，勾选后翻译一次即可生成")
+            }
+            NSWorkspace.shared.activateFileViewerSelecting([url.deletingLastPathComponent()])
+            return
+        }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 }
 
