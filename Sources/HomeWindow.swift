@@ -464,8 +464,94 @@ final class HotkeySectionView: NSView {
     }
 }
 
+/// App 风格滑动开关：关=白底灰钮，开=主题色底白钮，圆角胶囊 + 滑动动画。
+/// 规格参考用户给的 CSS（3.5:2 比例、圆钮、0.4s 过渡），开态颜色取全局强调色。
+final class GlassSwitch: NSControl {
+    private let track = CALayer()
+    private let knob = CALayer()
+    private var accent: NSColor { AppSettings.shared.accentColor }
+    private let offColor = NSColor(hexString: "#ADB5BD") ?? .systemGray
+
+    private let trackW: CGFloat = 46
+    private let trackH: CGFloat = 26
+    private let inset: CGFloat = 4
+    private var knobSize: CGFloat { trackH - inset * 2 }
+
+    private(set) var isOn = false
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: CGRect(origin: frameRect.origin, size: NSSize(width: 46, height: 26)))
+        wantsLayer = true
+        track.frame = CGRect(x: 0, y: 0, width: trackW, height: trackH)
+        track.cornerRadius = trackH / 2
+        track.borderWidth = 1
+        knob.frame = CGRect(x: inset, y: inset, width: knobSize, height: knobSize)
+        knob.cornerRadius = knobSize / 2
+        track.addSublayer(knob)
+        layer?.addSublayer(track)
+        updateAppearance(animated: false)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    override var intrinsicContentSize: NSSize { NSSize(width: trackW, height: trackH) }
+    override var acceptsFirstResponder: Bool { true }
+
+    func setOn(_ on: Bool, animated: Bool) {
+        isOn = on
+        updateAppearance(animated: animated)
+    }
+
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+
+    override func mouseDown(with event: NSEvent) {
+        setOn(!isOn, animated: true)
+        sendAction(action, to: target)
+    }
+
+    private func updateAppearance(animated: Bool) {
+        let knobX = isOn ? trackW - inset - knobSize : inset
+        let trackColor = (isOn ? accent : NSColor.white).cgColor
+        let borderColor = (isOn ? accent : offColor).cgColor
+        let knobColor = (isOn ? NSColor.white : offColor).cgColor
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(!animated)
+        if animated { CATransaction.setAnimationDuration(0.22) }
+        track.backgroundColor = trackColor
+        track.borderColor = borderColor
+        knob.backgroundColor = knobColor
+        knob.frame.origin.x = knobX
+        CATransaction.commit()
+    }
+}
+
+/// 一行「说明文字 + 右侧滑动开关」，替代系统复选框。
+final class SwitchRow: NSView {
+    let control = GlassSwitch(frame: .zero)
+    private let label = NSTextField(labelWithString: "")
+
+    init(title: String, width: CGFloat) {
+        super.init(frame: CGRect(x: 16, y: 0, width: width, height: 26))
+        label.stringValue = title
+        label.font = .systemFont(ofSize: 13)
+        label.textColor = .labelColor
+        label.frame = CGRect(x: 0, y: 3, width: width - 60, height: 20)
+        addSubview(label)
+        control.frame = CGRect(x: width - 46, y: 0, width: 46, height: 26)
+        addSubview(control)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func place(in parent: NSView, y: CGFloat) {
+        frame = CGRect(x: 16, y: y, width: frame.width, height: 26)
+        parent.addSubview(self)
+    }
+}
+
 final class ClipboardSectionView: NSView {
-    private let toggle = NSButton(checkboxWithTitle: "启用剪贴板历史", target: nil, action: nil)
+    private let toggle = SwitchRow(title: "启用剪贴板历史", width: 404)
     private let card = GlassSectionCard(frame: CGRect(x: 28, y: 28, width: 436, height: 84))
     private let settings: AppSettings
     private let onSave: () -> Void
@@ -479,11 +565,10 @@ final class ClipboardSectionView: NSView {
         addSubview(card)
         sectionTitle("剪贴板拓展坞", in: card)
 
-        toggle.state = settings.clipboardHistoryEnabled ? .on : .off
-        toggle.target = self
-        toggle.action = #selector(toggleChanged)
-        toggle.frame = CGRect(x: 16, y: 48, width: 300, height: 20)
-        card.addSubview(toggle)
+        toggle.control.setOn(settings.clipboardHistoryEnabled, animated: false)
+        toggle.control.target = self
+        toggle.control.action = #selector(toggleChanged)
+        toggle.place(in: card, y: 44)
     }
 
     required init?(coder: NSCoder) {
@@ -491,14 +576,14 @@ final class ClipboardSectionView: NSView {
     }
 
     @objc private func toggleChanged() {
-        settings.clipboardHistoryEnabled = toggle.state == .on
+        settings.clipboardHistoryEnabled = toggle.control.isOn
         onSave()
         Toast.show(settings.clipboardHistoryEnabled ? "已启用剪贴板历史" : "已关闭剪贴板历史")
     }
 }
 
 final class MouseSectionView: NSView {
-    private let toggle = NSButton(checkboxWithTitle: "启用鼠标中键触发", target: nil, action: nil)
+    private let toggle = SwitchRow(title: "启用鼠标中键触发", width: 404)
     private let statusLabel = NSTextField(labelWithString: "")
     private let requestButton = AccentGhostButton(title: "开启辅助功能权限")
     private let card = GlassSectionCard(frame: CGRect(x: 28, y: 28, width: 436, height: 124))
@@ -514,11 +599,10 @@ final class MouseSectionView: NSView {
         addSubview(card)
         sectionTitle("鼠标中键", in: card)
 
-        toggle.state = settings.middleClickEnabled ? .on : .off
-        toggle.target = self
-        toggle.action = #selector(toggleChanged)
-        toggle.frame = CGRect(x: 16, y: 48, width: 300, height: 20)
-        card.addSubview(toggle)
+        toggle.control.setOn(settings.middleClickEnabled, animated: false)
+        toggle.control.target = self
+        toggle.control.action = #selector(toggleChanged)
+        toggle.place(in: card, y: 44)
 
         statusLabel.font = .systemFont(ofSize: 12)
         statusLabel.textColor = .secondaryLabelColor
@@ -540,7 +624,7 @@ final class MouseSectionView: NSView {
     }
 
     @objc private func toggleChanged() {
-        settings.middleClickEnabled = toggle.state == .on
+        settings.middleClickEnabled = toggle.control.isOn
         onSave()
         refreshPermissionStatus()
         Toast.show(settings.middleClickEnabled ? "已启用鼠标中键触发" : "已关闭鼠标中键触发")
@@ -549,7 +633,7 @@ final class MouseSectionView: NSView {
     @objc private func requestAccessibility() {
         let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         settings.middleClickEnabled = true
-        toggle.state = .on
+        toggle.control.setOn(true, animated: true)
         AXIsProcessTrustedWithOptions(options)
         onSave()
         refreshPermissionStatus()
@@ -760,7 +844,8 @@ final class TranslationSectionView: NSView {
     private let apiKey = SecretKeyField(frame: .zero)
     private let keyLabel = NSTextField(labelWithString: "API Key")
     private let targetLanguage = NSPopUpButton()
-    private let debugCheck = NSButton(checkboxWithTitle: "调试日志（记录请求/返回，排查错译漏译）", target: nil, action: nil)
+    private let debugLabel = NSTextField(labelWithString: "调试日志")
+    private let debugSwitch = GlassSwitch(frame: .zero)
     private let openLogButton = NSButton(title: "打开日志", target: nil, action: nil)
     private let hint = NSTextField(labelWithString: "")
     private let card = GlassSectionCard(frame: CGRect(x: 28, y: 28, width: 436, height: 288))
@@ -812,11 +897,13 @@ final class TranslationSectionView: NSView {
         apiKey.frame = CGRect(x: 152, y: keyRowY, width: 436 - 152 - 16, height: 28)
         card.addSubview(apiKey)
 
-        debugCheck.state = settings.translationDebugLogEnabled ? .on : .off
-        debugCheck.font = .systemFont(ofSize: 12)
-        debugCheck.target = self
-        debugCheck.action = #selector(saveClick)
-        card.addSubview(debugCheck)
+        debugLabel.font = .systemFont(ofSize: 13)
+        debugLabel.textColor = .labelColor
+        card.addSubview(debugLabel)
+        debugSwitch.setOn(settings.translationDebugLogEnabled, animated: false)
+        debugSwitch.target = self
+        debugSwitch.action = #selector(saveClick)
+        card.addSubview(debugSwitch)
 
         openLogButton.bezelStyle = .rounded
         openLogButton.controlSize = .small
@@ -846,17 +933,18 @@ final class TranslationSectionView: NSView {
         apiKey.isHidden = !needsKey
 
         let debugY = needsKey ? keyRowY + 28 + 12 : keyRowY
-        debugCheck.frame = CGRect(x: 16, y: debugY, width: 300, height: 20)
-        openLogButton.frame = CGRect(x: 324, y: debugY - 2, width: 96, height: 24)
+        debugLabel.frame = CGRect(x: 16, y: debugY + 4, width: 96, height: 18)
+        debugSwitch.frame = CGRect(x: 116, y: debugY, width: 46, height: 26)
+        openLogButton.frame = CGRect(x: 324, y: debugY, width: 96, height: 24)
 
-        hint.frame = CGRect(x: 16, y: debugY + 30, width: 404, height: 32)
+        hint.frame = CGRect(x: 16, y: debugY + 32, width: 404, height: 32)
         hint.stringValue = "\(engine.subtitle)。选“区域翻译”动作框选外文，译文会以毛玻璃覆盖在原文上。"
     }
 
     @objc private func saveClick() {
         settings.deepSeekAPIKey = apiKey.stringValue
         settings.translationTargetLanguage = targetLanguage.titleOfSelectedItem ?? "中文（简体）"
-        settings.translationDebugLogEnabled = (debugCheck.state == .on)
+        settings.translationDebugLogEnabled = debugSwitch.isOn
         engineToggle.reload()   // 填完 Key 后开关切换成模型名 + logo
         onSave()
         Toast.show("设置已保存")
