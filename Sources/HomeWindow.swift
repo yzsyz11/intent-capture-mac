@@ -919,6 +919,8 @@ final class EngineToggleView: NSView {
 }
 
 /// 带小眼睛显隐的 API Key 输入框：默认遮住，点眼睛切换明文。
+/// 自定义 API Key 输入框：玻璃容器自绘描边 + 聚焦动画；内嵌单行（不换行、横向滚动）输入，
+/// 文字有内边距，小眼睛在框内右侧控制明文/密文。
 final class SecretKeyField: NSView {
     var onCommit: (() -> Void)?
     var placeholderString: String? {
@@ -932,14 +934,20 @@ final class SecretKeyField: NSView {
         set { plain.stringValue = newValue; secure.stringValue = newValue }
     }
 
-    private let plain = GlassTextField()
-    private let secure = GlassSecureField()
+    private let plain = BareTextField()
+    private let secure = BareSecureField()
     private let eye = NSButton()
     private var revealed = false
+    private var focused = false
+    private var accent: NSColor { AppSettings.shared.accentColor }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 8
+        layer?.borderWidth = 1
         build()
+        updateChrome(animated: false)
     }
 
     required init?(coder: NSCoder) { fatalError() }
@@ -951,12 +959,14 @@ final class SecretKeyField: NSView {
             field.translatesAutoresizingMaskIntoConstraints = false
             addSubview(field)
             NSLayoutConstraint.activate([
-                field.leadingAnchor.constraint(equalTo: leadingAnchor),
-                field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -30),
-                field.topAnchor.constraint(equalTo: topAnchor),
-                field.bottomAnchor.constraint(equalTo: bottomAnchor)
+                field.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 10),   // 左内边距
+                field.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -32), // 给小眼睛留位
+                field.centerYAnchor.constraint(equalTo: centerYAnchor),
+                field.heightAnchor.constraint(equalToConstant: 18)
             ])
         }
+        plain.onFocusChange = { [weak self] on in self?.setFocused(on) }
+        secure.onFocusChange = { [weak self] on in self?.setFocused(on) }
         plain.isHidden = true
 
         eye.target = self
@@ -968,11 +978,33 @@ final class SecretKeyField: NSView {
         eye.translatesAutoresizingMaskIntoConstraints = false
         addSubview(eye)
         NSLayoutConstraint.activate([
-            eye.trailingAnchor.constraint(equalTo: trailingAnchor),
+            eye.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             eye.centerYAnchor.constraint(equalTo: centerYAnchor),
-            eye.widthAnchor.constraint(equalToConstant: 26),
-            eye.heightAnchor.constraint(equalToConstant: 22)
+            eye.widthAnchor.constraint(equalToConstant: 22),
+            eye.heightAnchor.constraint(equalToConstant: 20)
         ])
+    }
+
+    private func setFocused(_ on: Bool) {
+        guard focused != on else { return }
+        focused = on
+        updateChrome(animated: true)
+    }
+
+    /// 聚焦时描边转主题色、底色略提亮，带过渡动画。
+    private func updateChrome(animated: Bool) {
+        let border = (focused ? accent.withAlphaComponent(0.9) : NSColor.white.withAlphaComponent(0.24)).cgColor
+        let bg = (focused ? NSColor.white.withAlphaComponent(0.12) : NSColor.white.withAlphaComponent(0.07)).cgColor
+        if animated {
+            let anim = CABasicAnimation(keyPath: "borderColor")
+            anim.fromValue = layer?.borderColor
+            anim.toValue = border
+            anim.duration = 0.18
+            layer?.add(anim, forKey: "borderColor")
+        }
+        layer?.borderColor = border
+        layer?.backgroundColor = bg
+        layer?.borderWidth = focused ? 1.5 : 1
     }
 
     @objc private func committed() { onCommit?() }
@@ -985,33 +1017,70 @@ final class SecretKeyField: NSView {
         plain.isHidden = !revealed
         secure.isHidden = revealed
         eye.image = NSImage(systemSymbolName: revealed ? "eye" : "eye.slash", accessibilityDescription: nil)
+        eye.contentTintColor = revealed ? accent : .secondaryLabelColor
         window?.makeFirstResponder(revealed ? plain : secure)
     }
 }
 
-/// 与 GlassTextField 同款玻璃样式的密文输入框。
-final class GlassSecureField: NSSecureTextField {
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        setup()
-    }
+/// 单行、无边框、透明底的输入框，聚焦时回调（供 SecretKeyField 画容器）。
+final class BareTextField: NSTextField {
+    var onFocusChange: ((Bool) -> Void)?
 
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        setup()
-    }
+    override init(frame frameRect: NSRect) { super.init(frame: frameRect); setupBare() }
+    required init?(coder: NSCoder) { super.init(coder: coder); setupBare() }
 
-    private func setup() {
+    private func setupBare() {
         isBordered = false
         drawsBackground = false
         focusRingType = .none
         font = .systemFont(ofSize: 12, weight: .medium)
         textColor = .labelColor
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.07).cgColor
-        layer?.cornerRadius = 8
-        layer?.borderWidth = 1
-        layer?.borderColor = NSColor.white.withAlphaComponent(0.24).cgColor
+        usesSingleLineMode = true
+        lineBreakMode = .byClipping
+        cell?.wraps = false
+        cell?.isScrollable = true
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        if ok { onFocusChange?(true) }
+        return ok
+    }
+
+    override func textDidEndEditing(_ notification: Notification) {
+        super.textDidEndEditing(notification)
+        onFocusChange?(false)
+    }
+}
+
+/// 单行密文版本，与 BareTextField 同款配置。
+final class BareSecureField: NSSecureTextField {
+    var onFocusChange: ((Bool) -> Void)?
+
+    override init(frame frameRect: NSRect) { super.init(frame: frameRect); setupBare() }
+    required init?(coder: NSCoder) { super.init(coder: coder); setupBare() }
+
+    private func setupBare() {
+        isBordered = false
+        drawsBackground = false
+        focusRingType = .none
+        font = .systemFont(ofSize: 12, weight: .medium)
+        textColor = .labelColor
+        usesSingleLineMode = true
+        lineBreakMode = .byClipping
+        cell?.wraps = false
+        cell?.isScrollable = true
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let ok = super.becomeFirstResponder()
+        if ok { onFocusChange?(true) }
+        return ok
+    }
+
+    override func textDidEndEditing(_ notification: Notification) {
+        super.textDidEndEditing(notification)
+        onFocusChange?(false)
     }
 }
 
