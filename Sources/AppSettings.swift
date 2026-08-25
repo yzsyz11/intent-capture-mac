@@ -7,6 +7,11 @@ final class AppSettings {
     private let defaults = UserDefaults.standard
     private let defaultSaveDirectory = URL(fileURLWithPath: "/Users/a1/Downloads/截图", isDirectory: true)
 
+    private init() {
+        // 一次性清理旧的 Keychain 项：ad-hoc 每次重签名身份都变，旧 key 会让系统在读取时反复弹钥匙串授权。
+        KeychainStore.delete(account: "deepseek.apiKey")
+    }
+
     var recentAction: CaptureAction {
         get {
             let raw = defaults.string(forKey: "recentAction") ?? CaptureAction.screenshotCopy.rawValue
@@ -98,15 +103,15 @@ final class AppSettings {
         set { defaults.set(newValue, forKey: "translationTargetLanguage") }
     }
 
-    /// DeepSeek API Key 存 Keychain，不落明文 UserDefaults。
+    /// DeepSeek API Key。改存 UserDefaults（本地明文）：Keychain 在 ad-hoc 重签后会反复弹授权，个人工具下不值当。
     var deepSeekAPIKey: String {
-        get { KeychainStore.read(account: "deepseek.apiKey") ?? "" }
+        get { defaults.string(forKey: "deepSeekAPIKey") ?? "" }
         set {
             let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty {
-                KeychainStore.delete(account: "deepseek.apiKey")
+                defaults.removeObject(forKey: "deepSeekAPIKey")
             } else {
-                KeychainStore.write(trimmed, account: "deepseek.apiKey")
+                defaults.set(trimmed, forKey: "deepSeekAPIKey")
             }
         }
     }
