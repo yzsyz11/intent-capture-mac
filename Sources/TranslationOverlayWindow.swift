@@ -1,5 +1,16 @@
 import AppKit
 
+/// 从 app bundle Resources 加载翻译相关图标（打包时由 package-macos.sh 从 Assets/icon 拷入）。
+enum TranslationAsset {
+    static func image(_ name: String) -> NSImage? {
+        if let url = Bundle.main.url(forResource: name, withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            return image
+        }
+        return NSImage(named: name)
+    }
+}
+
 /// 覆盖式翻译结果窗口：盖在选区上，逐行用毛玻璃卡片覆盖原文并画出译文。
 /// 工具条永远放在选区外侧（优先下方，贴屏底则翻到上方），不遮挡译文。
 /// 交互（本轮）：Esc / 点击空白关闭；「复制译文」复制全部译文。
@@ -99,19 +110,18 @@ final class TranslationOverlayView: NSView {
     // MARK: - Toolbar
 
     private func buildToolbar() {
-        // 图标为 SF Symbol 占位；如需与设计稿一致的原图，放进 Assets 后替换。
-        let compare = OverlayPillButton(symbol: "rectangle.lefthalf.filled", accent: accent)
+        let compare = OverlayPillButton(icon: TranslationAsset.image("duibi"), accent: accent)
         compare.target = self
         compare.action = #selector(toggleOriginal)
         compare.toolTip = "对照原文（再按切回译文）"
         compareButton = compare
 
-        let copy = OverlayPillButton(symbol: "doc.on.doc", accent: accent)
+        let copy = OverlayPillButton(icon: TranslationAsset.image("fuzhi"), accent: accent)
         copy.target = self
         copy.action = #selector(copyTranslations)
         copy.toolTip = "复制译文"
 
-        let close = OverlayPillButton(symbol: "xmark.circle.fill", accent: accent)
+        let close = OverlayPillButton(icon: TranslationAsset.image("guanbi"), accent: accent)
         close.target = self
         close.action = #selector(closeTapped)
         close.toolTip = "关闭"
@@ -121,8 +131,9 @@ final class TranslationOverlayView: NSView {
         bar.spacing = 8
         bar.translatesAutoresizingMaskIntoConstraints = false
         addSubview(bar)
+        // 放到选区右下角。
         NSLayoutConstraint.activate([
-            bar.leadingAnchor.constraint(equalTo: leadingAnchor, constant: max(2, contentRect.minX)),
+            bar.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
             bar.centerYAnchor.constraint(equalTo: bottomAnchor, constant: -(toolbarRect.minY + toolbarRect.height / 2))
         ])
     }
@@ -220,30 +231,32 @@ final class TranslationOverlayView: NSView {
     }
 }
 
-/// 覆盖层工具条上的纯图标毛玻璃胶囊按钮：深色磨砂底 + 白图标，带 hover 与激活态。
+/// 覆盖层工具条上的纯图标毛玻璃胶囊按钮：浅色磨砂底（深色图标才清晰），带 hover 与激活态。
 final class OverlayPillButton: NSButton {
     private let accent: NSColor
     private let blur = NSVisualEffectView()
     private var active = false
 
-    init(symbol: String, accent: NSColor) {
+    init(icon: NSImage?, accent: NSColor) {
         self.accent = accent
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         isBordered = false
         bezelStyle = .regularSquare
         imagePosition = .imageOnly
-        image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .semibold))
+        if let icon {
+            icon.isTemplate = false   // 保留原图颜色（deepseek 彩色/深色图标），不做着色
+            icon.size = NSSize(width: 18, height: 18)
+        }
+        image = icon
         imageScaling = .scaleProportionallyDown
-        contentTintColor = .white
         wantsLayer = true
 
-        // 深色磨砂：在透明覆盖窗上渲染成深色半透明底，白图标才清晰。
+        // 浅色磨砂底：强制 aqua 外观，保证在任意截图上深色图标都清晰。
         blur.material = .hudWindow
         blur.blendingMode = .behindWindow
         blur.state = .active
-        blur.appearance = NSAppearance(named: .darkAqua)
+        blur.appearance = NSAppearance(named: .aqua)
         blur.wantsLayer = true
         blur.layer?.cornerRadius = 9
         blur.layer?.masksToBounds = true

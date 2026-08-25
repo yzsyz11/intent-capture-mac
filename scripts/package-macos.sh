@@ -31,6 +31,7 @@ mkdir -p "$MACOS" "$RESOURCES"
 
 cp "$ROOT/Info.plist" "$CONTENTS/Info.plist"
 cp "$APP_ICON" "$RESOURCES/IntentCaptureAppIcon.icns"
+cp "$ROOT"/Assets/icon/*.png "$RESOURCES/"
 
 SOURCES=(
   "$ROOT/Sources/AppSettings.swift"
