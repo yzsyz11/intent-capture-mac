@@ -232,9 +232,11 @@ final class TranslationOverlayView: NSView {
 }
 
 /// 覆盖层工具条上的纯图标毛玻璃胶囊按钮：浅色磨砂底（深色图标才清晰），带 hover 与激活态。
+/// 图标用独立 `NSImageView` 叠在磨砂**之上**（NSButton 自绘图标会被子视图磨砂盖住，故不走 image）。
 final class OverlayPillButton: NSButton {
     private let accent: NSColor
     private let blur = NSVisualEffectView()
+    private let iconView = NSImageView()
     private var active = false
 
     init(icon: NSImage?, accent: NSColor) {
@@ -242,14 +244,8 @@ final class OverlayPillButton: NSButton {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         isBordered = false
-        bezelStyle = .regularSquare
-        imagePosition = .imageOnly
-        if let icon {
-            icon.isTemplate = false   // 保留原图颜色（deepseek 彩色/深色图标），不做着色
-            icon.size = NSSize(width: 18, height: 18)
-        }
-        image = icon
-        imageScaling = .scaleProportionallyDown
+        title = ""
+        imagePosition = .noImage
         wantsLayer = true
 
         // 浅色磨砂底：强制 aqua 外观，保证在任意截图上深色图标都清晰。
@@ -263,18 +259,34 @@ final class OverlayPillButton: NSButton {
         blur.layer?.borderWidth = 1
         blur.layer?.borderColor = accent.withAlphaComponent(0.5).cgColor
         blur.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(blur, positioned: .below, relativeTo: nil)
+        addSubview(blur)
+
+        if let icon { icon.isTemplate = false }  // 保留原图颜色
+        iconView.image = icon
+        iconView.imageScaling = .scaleProportionallyDown
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(iconView)   // 叠在磨砂之上
+
         NSLayoutConstraint.activate([
             blur.leadingAnchor.constraint(equalTo: leadingAnchor),
             blur.trailingAnchor.constraint(equalTo: trailingAnchor),
             blur.topAnchor.constraint(equalTo: topAnchor),
             blur.bottomAnchor.constraint(equalTo: bottomAnchor),
             widthAnchor.constraint(equalToConstant: 34),
-            heightAnchor.constraint(equalToConstant: 28)
+            heightAnchor.constraint(equalToConstant: 28),
+            iconView.centerXAnchor.constraint(equalTo: centerXAnchor),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 18),
+            iconView.heightAnchor.constraint(equalToConstant: 18)
         ])
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// 子视图（磨砂/图标）不得吞掉点击，统一交给按钮自身。
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        return super.hitTest(point) != nil ? self : nil
+    }
 
     /// 激活态（用于「对照」按钮按下时高亮）。
     func setActive(_ on: Bool) {
