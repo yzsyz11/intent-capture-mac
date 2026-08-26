@@ -17,7 +17,6 @@ enum Design {
     /// 圆角。
     enum Radius {
         static let card: CGFloat = 12    // 设置分组卡
-        static let control: CGFloat = 8  // 输入框、按钮
         static let nav: CGFloat = 9      // 侧边栏项 / 选中滑块
         static let tile: CGFloat = 8     // 图标块
         static let action: CGFloat = 12  // 动作宫格
@@ -44,26 +43,24 @@ enum Design {
         static let rowTitle = NSFont.systemFont(ofSize: 13)
         static let rowLabel = NSFont.systemFont(ofSize: 12.5)
         static let secondary = NSFont.systemFont(ofSize: 11.5)
-        static let nav = NSFont.systemFont(ofSize: 12.5)
     }
 
-    /// 颜色（暖米白 + 边缘光玻璃语义）。冷青强调压在暖底上，冷暖对比更精致。
+    /// 颜色（白底浅色语义）。窗口浅灰白 + 纯白卡，卡靠 hairline 描边 + 轻阴影出层次；冷青强调。
     enum Color {
-        /// 窗口暖米白底（米白→浅驼的暖灰白）。
-        static let windowBackground = NSColor(srgbRed: 0.957, green: 0.945, blue: 0.925, alpha: 1)
-        /// 玻璃卡片填充：比暖底更亮的暖白，靠顶部高光/亮边/描边表现玻璃厚度。
-        static let cardFill = NSColor(srgbRed: 0.995, green: 0.990, blue: 0.982, alpha: 1)
-        static let cardTopHighlight = NSColor.white.withAlphaComponent(0.9)
-        static let cardBorder = NSColor(srgbRed: 0.42, green: 0.38, blue: 0.32, alpha: 0.16)
-        static let separator = NSColor(srgbRed: 0.42, green: 0.38, blue: 0.32, alpha: 0.12)
-        static let textPrimary = NSColor(srgbRed: 0.16, green: 0.14, blue: 0.11, alpha: 1)
-        static let textSecondary = NSColor(srgbRed: 0.16, green: 0.14, blue: 0.11, alpha: 0.55)
-        static let textTertiary = NSColor(srgbRed: 0.16, green: 0.14, blue: 0.11, alpha: 0.4)
-        /// 下沉状态条：微凹暖影。
-        static let statusBarFill = NSColor(srgbRed: 0.42, green: 0.38, blue: 0.32, alpha: 0.05)
-        static let sidebarFill = NSColor(srgbRed: 0.42, green: 0.38, blue: 0.32, alpha: 0.03)
-        static let tileFill = NSColor(srgbRed: 0.42, green: 0.38, blue: 0.32, alpha: 0.06)
-        static let switchOff = NSColor(srgbRed: 0.42, green: 0.38, blue: 0.32, alpha: 0.18)
+        /// 窗口底：极浅中性灰白（系统设置同款，让纯白卡片浮起来）。
+        static let windowBackground = NSColor(white: 0.96, alpha: 1)
+        /// 卡片填充：纯白。
+        static let cardFill = NSColor.white
+        static let cardBorder = NSColor.black.withAlphaComponent(0.09)
+        static let separator = NSColor.black.withAlphaComponent(0.07)
+        static let textPrimary = NSColor(white: 0.12, alpha: 1)
+        static let textSecondary = NSColor.black.withAlphaComponent(0.55)
+        static let textTertiary = NSColor.black.withAlphaComponent(0.4)
+        /// 下沉状态条：微凹。
+        static let statusBarFill = NSColor.black.withAlphaComponent(0.035)
+        static let sidebarFill = NSColor.black.withAlphaComponent(0.025)
+        static let tileFill = NSColor.black.withAlphaComponent(0.05)
+        static let switchOff = NSColor.black.withAlphaComponent(0.18)
 
         static var accent: NSColor { AppSettings.shared.accentColor }
         static func accentTint(_ a: CGFloat) -> NSColor { accent.withAlphaComponent(a) }
@@ -72,7 +69,6 @@ enum Design {
     /// 动效参数（弹簧，按 apple-design：临界阻尼、response≈0.35）。
     enum Motion {
         static let pageResponse: Double = 0.35
-        static let pageDamping: Double = 1.0
         static let switchDuration: Double = 0.24
         static var reduceMotion: Bool {
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion

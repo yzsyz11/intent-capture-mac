@@ -153,6 +153,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             clipboardStore.start()
         } else {
             clipboardStore.stop()
+            clipboardDock?.hideDock()   // 关闭时收起已开的拓展坞
         }
     }
 
@@ -204,6 +205,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleClipboardDock() {
+        guard settings.clipboardHistoryEnabled else {
+            Toast.show("剪贴板拓展坞已关闭，请在功能里开启")
+            return
+        }
         if clipboardDock == nil {
             let dock = ClipboardDockWindow(store: clipboardStore)
             dock.onOpenSettings = { [weak self] in self?.showActionPanel() }
@@ -213,7 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showSettings() {
-        openHome(section: .hotkeys)
+        openHome(section: .trigger)
     }
 
     private func openHome(section: HomeSection) {
