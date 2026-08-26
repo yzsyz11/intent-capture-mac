@@ -426,7 +426,6 @@ final class HotkeySectionView: NSView {
     private let actionHotkey: HotkeyRecorderButton
     private let panelHotkey: HotkeyRecorderButton
     private let clipboardDockHotkey: HotkeyRecorderButton
-    private let card = GlassSectionCard(frame: CGRect(x: 28, y: 28, width: 436, height: 172))
 
     override var isFlipped: Bool { true }
 
@@ -434,13 +433,28 @@ final class HotkeySectionView: NSView {
         actionHotkey = HotkeyRecorderButton(hotkey: settings.actionHotkey)
         panelHotkey = HotkeyRecorderButton(hotkey: settings.panelHotkey)
         clipboardDockHotkey = HotkeyRecorderButton(hotkey: settings.clipboardDockHotkey)
-        super.init(frame: CGRect(x: 0, y: 0, width: 492, height: 420))
-        addSubview(card)
-        sectionTitle("键盘快捷键", in: card)
+        super.init(frame: CGRect(x: 0, y: 0, width: Design.Layout.contentWidth, height: Design.Layout.windowHeight))
 
-        var y = placeRow(in: card, title: "执行默认动作", control: actionHotkey, y: 48, width: 436)
-        y = placeRow(in: card, title: "打开主页", control: panelHotkey, y: y, width: 436)
-        placeRow(in: card, title: "剪贴板拓展坞", control: clipboardDockHotkey, y: y, width: 436)
+        let header = GroupHeader("键盘快捷键")
+        let card = SettingsCard()
+        for recorder in [actionHotkey, panelHotkey, clipboardDockHotkey] {
+            recorder.translatesAutoresizingMaskIntoConstraints = false
+            recorder.widthAnchor.constraint(equalToConstant: 150).isActive = true
+            recorder.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        }
+        card.addRow(SettingRow.make(title: "执行默认动作", control: actionHotkey))
+        card.addRow(SettingRow.make(title: "打开主页", control: panelHotkey))
+        card.addRow(SettingRow.make(title: "剪贴板拓展坞", control: clipboardDockHotkey))
+        addSubview(header)
+        addSubview(card)
+        let inset = Design.Layout.contentInset
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: topAnchor, constant: inset),
+            header.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset + 2),
+            card.topAnchor.constraint(equalTo: header.bottomAnchor, constant: Design.Spacing.s),
+            card.leadingAnchor.constraint(equalTo: leadingAnchor, constant: inset),
+            card.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -inset)
+        ])
 
         actionHotkey.onChange = { hotkey in
             settings.actionHotkey = hotkey
