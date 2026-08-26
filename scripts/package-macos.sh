@@ -35,6 +35,7 @@ cp "$ROOT"/Assets/icon/*.png "$RESOURCES/"
 
 SOURCES=(
   "$ROOT/Sources/AppSettings.swift"
+  "$ROOT/Sources/Design.swift"
   "$ROOT/Sources/CaptureAction.swift"
   "$ROOT/Sources/HotkeyRecorder.swift"
   "$ROOT/Sources/GlobalHotkey.swift"
