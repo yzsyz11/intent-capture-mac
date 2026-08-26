@@ -104,9 +104,9 @@ final class HomeWindowView: NSView {
     }
 
     private func build() {
-        // 白底重构：改实心白背景，替代原来盖在桌面壁纸上的半透明磨砂（会让整个 app 发暗）。
+        // 暖米白重构：改实心暖米白背景，替代原来盖在桌面壁纸上的半透明磨砂（会让整个 app 发暗）。
         wantsLayer = true
-        layer?.backgroundColor = Design.Color.cardFill.cgColor
+        layer?.backgroundColor = Design.Color.windowBackground.cgColor
         backgroundEffect.isHidden = true
         backgroundEffect.autoresizingMask = [.width, .height]
         backgroundEffect.frame = bounds
