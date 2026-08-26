@@ -856,6 +856,7 @@ final class FeaturesSectionView: NSView {
     private let debugSwitch = GlassSwitch(frame: .zero)
     private let translationCard = SettingsCard()
     private let keyCard = SettingsCard()
+    private let keyWarning = SettingRow.label("未填 API Key，区域翻译暂不可用", font: Design.Font.secondary, color: .systemOrange)
     private let settings: AppSettings
     private let onSave: () -> Void
 
@@ -922,6 +923,8 @@ final class FeaturesSectionView: NSView {
         col.addArrangedSubview(keyCard)
         keyCard.leadingAnchor.constraint(equalTo: col.leadingAnchor).isActive = true
         keyCard.trailingAnchor.constraint(equalTo: col.trailingAnchor).isActive = true
+        col.addArrangedSubview(keyWarning)
+        col.setCustomSpacing(6, after: keyCard)
         rebuildKeyRow()
 
         NSLayoutConstraint.activate([
@@ -935,6 +938,14 @@ final class FeaturesSectionView: NSView {
     /// A 方案：DeepSeek 才展开 API Key 卡。
     private func rebuildKeyRow() {
         keyCard.isHidden = !settings.translationEngine.needsAPIKey
+        refreshKeyWarning()
+    }
+
+    /// DeepSeek 且未填 Key 时提示区域翻译不可用。
+    private func refreshKeyWarning() {
+        let needsKey = settings.translationEngine.needsAPIKey
+        let empty = settings.deepSeekAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        keyWarning.isHidden = !(needsKey && empty)
     }
 
     @objc private func toggleClipboard() {
@@ -948,6 +959,7 @@ final class FeaturesSectionView: NSView {
         settings.translationTargetLanguage = targetLanguage.titleOfSelectedItem ?? "中文（简体）"
         settings.translationDebugLogEnabled = debugSwitch.isOn
         enginePicker.reload()
+        refreshKeyWarning()
         onSave()
         Toast.show("设置已保存")
     }
