@@ -79,23 +79,20 @@ final class SettingsCard: NSView {
     convenience init() { self.init(frame: .zero); translatesAutoresizingMaskIntoConstraints = false }
 
     /// 追加一行。非首行时自动在上方插入通栏分隔线。
+    /// 注意：约束必须在视图加入层级「之后」再激活，否则无共同祖先会抛 NSException。
     func addRow(_ row: NSView) {
         if !stack.arrangedSubviews.isEmpty {
-            stack.addArrangedSubview(makeSeparator())
+            let line = NSView()
+            line.wantsLayer = true
+            line.layer?.backgroundColor = Design.Color.separator.cgColor
+            line.translatesAutoresizingMaskIntoConstraints = false
+            stack.addArrangedSubview(line)
+            line.heightAnchor.constraint(equalToConstant: 0.5).isActive = true
+            line.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
         }
         row.translatesAutoresizingMaskIntoConstraints = false
         stack.addArrangedSubview(row)
         row.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-    }
-
-    private func makeSeparator() -> NSView {
-        let line = NSView()
-        line.wantsLayer = true
-        line.layer?.backgroundColor = Design.Color.separator.cgColor
-        line.translatesAutoresizingMaskIntoConstraints = false
-        line.heightAnchor.constraint(equalToConstant: 0.5).isActive = true
-        line.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-        return line
     }
 }
 
