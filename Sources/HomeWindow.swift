@@ -50,6 +50,7 @@ final class HomeWindow: NSWindow {
         titleVisibility = .hidden
         isMovableByWindowBackground = true
         isReleasedWhenClosed = false
+        appearance = NSAppearance(named: .aqua) // 白底重构：锁浅色，系统深色下也保持白
         contentView = homeView
     }
 
@@ -103,10 +104,10 @@ final class HomeWindowView: NSView {
     }
 
     private func build() {
-        backgroundEffect.material = .underWindowBackground
-        backgroundEffect.blendingMode = .behindWindow
-        backgroundEffect.state = .active
-        backgroundEffect.alphaValue = 0.5
+        // 白底重构：改实心白背景，替代原来盖在桌面壁纸上的半透明磨砂（会让整个 app 发暗）。
+        wantsLayer = true
+        layer?.backgroundColor = Design.Color.cardFill.cgColor
+        backgroundEffect.isHidden = true
         backgroundEffect.autoresizingMask = [.width, .height]
         backgroundEffect.frame = bounds
         addSubview(backgroundEffect)
@@ -177,13 +178,13 @@ final class SidebarView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        NSColor.white.withAlphaComponent(0.03).setFill()
+        NSColor.black.withAlphaComponent(0.025).setFill()
         bounds.fill()
         let line = NSBezierPath()
         line.move(to: CGPoint(x: bounds.width - 0.5, y: 0))
         line.line(to: CGPoint(x: bounds.width - 0.5, y: bounds.height))
         line.lineWidth = 1
-        NSColor.white.withAlphaComponent(0.14).setStroke()
+        NSColor.black.withAlphaComponent(0.09).setStroke()
         line.stroke()
     }
 
@@ -250,9 +251,9 @@ final class NavItemButton: NSButton {
     override func draw(_ dirtyRect: NSRect) {
         let path = NSBezierPath(roundedRect: bounds, xRadius: 10, yRadius: 10)
         if isActive {
-            accent.withAlphaComponent(0.18).setFill()
+            accent.withAlphaComponent(0.15).setFill()
         } else if isHovering {
-            NSColor.white.withAlphaComponent(0.08).setFill()
+            NSColor.black.withAlphaComponent(0.05).setFill()
         } else {
             NSColor.clear.setFill()
         }
