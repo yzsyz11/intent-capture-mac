@@ -33,11 +33,12 @@ enum HomeSection: CaseIterable {
 final class HomeWindow: NSWindow {
     private let homeView: HomeWindowView
 
-    init(onSelectAction: @escaping (CaptureAction) -> Void, onSettingsSaved: @escaping () -> Void) {
+    init(onSelectAction: @escaping (CaptureAction) -> Void, onSettingsSaved: @escaping () -> Void, onHeal: @escaping (PermissionKind) -> Void) {
         homeView = HomeWindowView(
             settings: AppSettings.shared,
             onSelectAction: onSelectAction,
-            onSettingsSaved: onSettingsSaved
+            onSettingsSaved: onSettingsSaved,
+            onHeal: onHeal
         )
         super.init(
             contentRect: CGRect(x: 0, y: 0, width: Design.Layout.windowWidth, height: Design.Layout.windowHeight),
@@ -83,11 +84,11 @@ final class HomeWindowView: NSView {
 
     override var isFlipped: Bool { true }
 
-    init(settings: AppSettings, onSelectAction: @escaping (CaptureAction) -> Void, onSettingsSaved: @escaping () -> Void) {
+    init(settings: AppSettings, onSelectAction: @escaping (CaptureAction) -> Void, onSettingsSaved: @escaping () -> Void, onHeal: @escaping (PermissionKind) -> Void) {
         self.onSelectAction = onSelectAction
         dashboard = DashboardSectionView(settings: settings)
         savingSection = SavingSectionView(settings: settings, onSave: onSettingsSaved)
-        triggerSection = TriggerSectionView(settings: settings, onSave: onSettingsSaved)
+        triggerSection = TriggerSectionView(settings: settings, onSave: onSettingsSaved, onHeal: onHeal)
         featuresSection = FeaturesSectionView(settings: settings, onSave: onSettingsSaved)
         appearanceSection = AppearanceSectionView(settings: settings)
         super.init(frame: CGRect(x: 0, y: 0, width: Design.Layout.windowWidth, height: Design.Layout.windowHeight))
@@ -750,12 +751,14 @@ final class TriggerSectionView: NSView {
     private let permButton = AccentGhostButton(title: "去授权")
     private let settings: AppSettings
     private let onSave: () -> Void
+    private let onHeal: (PermissionKind) -> Void
 
     override var isFlipped: Bool { true }
 
-    init(settings: AppSettings, onSave: @escaping () -> Void) {
+    init(settings: AppSettings, onSave: @escaping () -> Void, onHeal: @escaping (PermissionKind) -> Void) {
         self.settings = settings
         self.onSave = onSave
+        self.onHeal = onHeal
         actionHotkey = HotkeyRecorderButton(hotkey: settings.actionHotkey)
         panelHotkey = HotkeyRecorderButton(hotkey: settings.panelHotkey)
         clipboardDockHotkey = HotkeyRecorderButton(hotkey: settings.clipboardDockHotkey)
@@ -818,29 +821,37 @@ final class TriggerSectionView: NSView {
     }
 
     @objc private func requestAccessibility() {
-        let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
         settings.middleClickEnabled = true
         mouseSwitch.setOn(true, animated: true)
-        AXIsProcessTrustedWithOptions(options)
         onSave()
+        // 交给 AppDelegate 的三态自愈流程（清僵尸 + 重授 + 轮询 + 可靠重启），单一真相源。
+        onHeal(.accessibility)
         refreshPermissionStatus()
-        Toast.show(AXIsProcessTrusted() ? "中键触发已启用" : "授权后请退出并重新打开 Intent Capture。")
     }
 
     func refreshPermissionStatus() {
-        let trusted = AXIsProcessTrusted()
         if !settings.middleClickEnabled {
             permStatus.stringValue = "中键关闭中"
             permStatus.textColor = Design.Color.textTertiary
             permStatus.isHidden = false
             permButton.isHidden = true
-        } else if trusted {
+            return
+        }
+        switch PermissionEvaluator.state(of: .accessibility) {
+        case .granted:
             permStatus.stringValue = "已授权"
             permStatus.textColor = Design.Color.accent
             permStatus.isHidden = false
             permButton.isHidden = true
-        } else {
+        case .stale:
+            permStatus.stringValue = "授权失效"
+            permStatus.textColor = .systemOrange
+            permStatus.isHidden = false
+            permButton.title = "一键修复"
+            permButton.isHidden = false
+        case .notGranted:
             permStatus.isHidden = true
+            permButton.title = "去授权"
             permButton.isHidden = false
         }
     }

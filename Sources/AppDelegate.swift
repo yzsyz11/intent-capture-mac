@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var clipboardDock: ClipboardDockWindow?
     private var radialMenu: RadialMenuWindow?
     private var middleClickStatus = "中键监听：未启动"
+    private var permissionWatcher: PermissionWatcher?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMainMenu()
@@ -244,6 +245,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.startClipboardHistory()
                 self?.startMouseMonitor()
                 self?.setupStatusItem()
+            }, onHeal: { [weak self] kind in
+                self?.healPermission(kind)
             })
             homeWindow = window
         }
@@ -255,24 +258,66 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func requestAccessibilityPermission() {
-        if MouseEventMonitor.requestAccessibilityPermission() {
-            settings.middleClickEnabled = true
-            startMouseMonitor()
-            Toast.show("中键权限已开启")
-        } else {
-            Toast.show("请在系统设置中允许 Intent Capture 的辅助功能权限。")
-        }
+        healPermission(.accessibility)
     }
 
     @objc private func checkScreenCapturePermission() {
-        if CGPreflightScreenCaptureAccess() {
-            Toast.show("当前 App 的屏幕录制权限已生效")
-        } else {
-            CGRequestScreenCaptureAccess()
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                NSWorkspace.shared.open(url)
+        healPermission(.screenRecording)
+    }
+
+    /// 三态自愈入口：僵尸先清后授、未授权直接授，已生效则收尾；随后轮询直到生效自动前进。
+    private func healPermission(_ kind: PermissionKind) {
+        let state = PermissionEvaluator.state(of: kind)
+        if state == .granted {
+            onPermissionGranted(kind)
+            return
+        }
+        Toast.show(state == .stale
+            ? "检测到旧授权失效，正在清理并重新申请\(kind.displayName)…"
+            : "正在申请\(kind.displayName)权限，请在系统设置中允许…")
+        PermissionHealer.heal(kind, state: state)
+        watchUntilGranted(kind)
+    }
+
+    /// 轮询该权限，一旦生效即停表并收尾。
+    private func watchUntilGranted(_ kind: PermissionKind) {
+        permissionWatcher?.stop()
+        let watcher = PermissionWatcher { [weak self] states in
+            guard let self, states[kind] == .granted else { return }
+            self.permissionWatcher?.stop()
+            self.permissionWatcher = nil
+            self.onPermissionGranted(kind)
+        }
+        permissionWatcher = watcher
+        watcher.start()
+    }
+
+    /// 授权生效后的收尾：中键尝试即时启用，起不来则可靠重启；屏幕录制必须重启一次。
+    private func onPermissionGranted(_ kind: PermissionKind) {
+        switch kind {
+        case .accessibility:
+            settings.middleClickEnabled = true
+            startMouseMonitor()
+            if middleClickStatus == "中键监听：运行中" {
+                Toast.show("中键权限已开启")
+            } else {
+                promptRestart(message: "中键权限已授权", info: "重启 Intent Capture 后中键监听即生效。")
             }
-            Toast.show("屏幕录制权限未生效；开启后请退出并重新打开 App。")
+        case .screenRecording:
+            promptRestart(message: "屏幕录制已授权", info: "系统要求重启 App 后此权限才生效。")
+        }
+    }
+
+    /// 可靠重启确认框：确认后走脱离进程的 relaunch，解决"自动重启失败"。
+    private func promptRestart(message: String, info: String) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = info
+        alert.addButton(withTitle: "立即重启")
+        alert.addButton(withTitle: "稍后")
+        NSApp.activate(ignoringOtherApps: true)
+        if alert.runModal() == .alertFirstButtonReturn {
+            AppRelauncher.relaunch()
         }
     }
 
