@@ -37,6 +37,7 @@ SOURCES=(
   "$ROOT/Sources/AppSettings.swift"
   "$ROOT/Sources/PermissionState.swift"
   "$ROOT/Sources/PermissionHealer.swift"
+  "$ROOT/Sources/OnboardingWindow.swift"
   "$ROOT/Sources/Design.swift"
   "$ROOT/Sources/Components.swift"
   "$ROOT/Sources/CaptureAction.swift"

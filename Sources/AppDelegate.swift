@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var radialMenu: RadialMenuWindow?
     private var middleClickStatus = "中键监听：未启动"
     private var permissionWatcher: PermissionWatcher?
+    private var onboardingWindow: OnboardingWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMainMenu()
@@ -22,11 +23,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startMouseMonitor()
         // 评估两项权限，把当前已生效状态记入历史（供三态判定与升级引导使用）。
         recordPermissionBaseline()
-        // 仅首次启动弹主页引导；之后常驻菜单栏静默，避免开机自启时打扰用户。
-        if !settings.hasLaunchedBefore {
-            settings.hasLaunchedBefore = true
+        maybeShowOnboarding()
+    }
+
+    /// 有权限未生效，且（首次启动 或 装了新版）→ 弹权限引导向导；否则静默常驻。
+    /// 权限都齐时首启仍弹一次主页做基本引导，保持原有行为。
+    private func maybeShowOnboarding() {
+        let anyMissing = PermissionKind.allCases.contains { PermissionEvaluator.state(of: $0) != .granted }
+        let isNewBuild = settings.onboardingLastSeenBuild != AppBuildSignature.current
+        let firstLaunch = !settings.hasLaunchedBefore
+
+        if anyMissing && (firstLaunch || isNewBuild) {
+            showOnboarding()
+        } else if firstLaunch {
             showHome()
         }
+        settings.hasLaunchedBefore = true
+        settings.onboardingLastSeenBuild = AppBuildSignature.current
+    }
+
+    private func showOnboarding() {
+        if onboardingWindow == nil {
+            onboardingWindow = OnboardingWindow(onHeal: { [weak self] kind in self?.healPermission(kind) })
+        }
+        onboardingWindow?.present()
     }
 
     /// 启动时评估两项权限：判为已生效者顺手写入历史标记与构建签名，
