@@ -49,6 +49,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         onboardingWindow?.present()
     }
 
+    /// 手动打开权限向导（菜单入口）：不依赖"缺权限才弹"，随时可查看 / 重新走一遍。
+    /// 权限都齐时显示两行绿灯 + 完成可点，作为"已就绪"状态查看。
+    @objc private func openOnboardingGuide() {
+        showOnboarding()
+    }
+
     /// 启动时评估两项权限：判为已生效者顺手写入历史标记与构建签名，
     /// 使后续能区分「从没授过」与「曾授过现失效（僵尸）」。仅记录，不弹窗。
     private func recordPermissionBaseline() {
@@ -78,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(NSMenuItem(title: "设置...", action: #selector(showSettings), keyEquivalent: ","))
+        appMenu.addItem(NSMenuItem(title: "权限设置向导...", action: #selector(openOnboardingGuide), keyEquivalent: ""))
         appMenu.addItem(NSMenuItem(title: "检查屏幕录制权限", action: #selector(checkScreenCapturePermission), keyEquivalent: ""))
         appMenu.addItem(NSMenuItem(title: "开启中键权限...", action: #selector(requestAccessibilityPermission), keyEquivalent: ""))
         appMenu.addItem(NSMenuItem.separator())
@@ -127,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: middleClickStatus, action: nil, keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "设置", action: #selector(showSettings), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "权限设置向导...", action: #selector(openOnboardingGuide), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "检查屏幕录制权限", action: #selector(checkScreenCapturePermission), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "开启中键权限...", action: #selector(requestAccessibilityPermission), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
