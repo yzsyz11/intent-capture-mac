@@ -19,10 +19,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHotkeys()
         startClipboardHistory()
         startMouseMonitor()
+        // 评估两项权限，把当前已生效状态记入历史（供三态判定与升级引导使用）。
+        recordPermissionBaseline()
         // 仅首次启动弹主页引导；之后常驻菜单栏静默，避免开机自启时打扰用户。
         if !settings.hasLaunchedBefore {
             settings.hasLaunchedBefore = true
             showHome()
+        }
+    }
+
+    /// 启动时评估两项权限：判为已生效者顺手写入历史标记与构建签名，
+    /// 使后续能区分「从没授过」与「曾授过现失效（僵尸）」。仅记录，不弹窗。
+    private func recordPermissionBaseline() {
+        for kind in PermissionKind.allCases {
+            _ = PermissionEvaluator.state(of: kind, settings: settings)
         }
     }
 

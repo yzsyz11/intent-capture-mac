@@ -10,6 +10,7 @@ command -v swiftc >/dev/null 2>&1 || {
 
 SOURCES=(
   "$ROOT/Sources/AppSettings.swift"
+  "$ROOT/Sources/PermissionState.swift"
   "$ROOT/Sources/Design.swift"
   "$ROOT/Sources/Components.swift"
   "$ROOT/Sources/CaptureAction.swift"

@@ -76,6 +76,30 @@ final class AppSettings {
         set { defaults.set(newValue, forKey: "hasLaunchedBefore") }
     }
 
+    // MARK: - 权限历史（三态判定 + 升级引导触发）
+
+    /// 是否曾观察到该权限已生效。用于区分「从没授过」与「曾授过但现在失效（僵尸）」。
+    func hasEverGranted(_ kind: PermissionKind) -> Bool {
+        defaults.bool(forKey: "perm.everGranted.\(kind.storageKey)")
+    }
+
+    /// 判定为已生效时回写：置历史标记 + 记录当前构建签名。
+    func markGranted(_ kind: PermissionKind, signature: String) {
+        defaults.set(true, forKey: "perm.everGranted.\(kind.storageKey)")
+        defaults.set(signature, forKey: "perm.lastSig.\(kind.storageKey)")
+    }
+
+    /// 上次判为已生效时的构建签名；与当前签名不同即说明重装/重签，多为僵尸成因。
+    func lastGrantedSignature(_ kind: PermissionKind) -> String {
+        defaults.string(forKey: "perm.lastSig.\(kind.storageKey)") ?? ""
+    }
+
+    /// 上次引导见过的构建签名；与当前不同 = 装了新版，用于升级时自动弹一次引导。
+    var onboardingLastSeenBuild: String {
+        get { defaults.string(forKey: "onboarding.lastSeenBuild") ?? "" }
+        set { defaults.set(newValue, forKey: "onboarding.lastSeenBuild") }
+    }
+
     /// 全局主题强调色（十六进制），应用于侧边栏高亮、按钮描边与中键轮盘。
     static let defaultAccentHex = "#2EA6C7"
 
