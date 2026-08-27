@@ -31,6 +31,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 有权限未生效，且（首次启动 或 装了新版）→ 弹权限引导向导；否则静默常驻。
     /// 权限都齐时首启仍弹一次主页做基本引导，保持原有行为。
     private func maybeShowOnboarding() {
+        // 重启前在向导里授权了屏幕录制：重启回来自动重开向导（此时多已就绪），给个收尾。
+        if settings.onboardingResumeAfterRestart {
+            settings.onboardingResumeAfterRestart = false
+            showOnboarding()
+            settings.onboardingLastSeenBuild = AppBuildSignature.current
+            return
+        }
         let anyMissing = PermissionKind.allCases.contains { PermissionEvaluator.state(of: $0) != .granted }
         let isNewBuild = settings.onboardingLastSeenBuild != AppBuildSignature.current
         let firstLaunch = !settings.hasLaunchedBefore
@@ -49,6 +56,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onboardingWindow = OnboardingWindow(onGranted: { [weak self] kind in
                 self?.applyGrantedSideEffects(kind, fromWizard: true)
             })
+            // 主动点完成/稍后关闭时清掉恢复标记；重启导致的终止不走 close，故不会误清。
+            onboardingWindow?.onDismiss = { [weak self] in
+                self?.settings.onboardingResumeAfterRestart = false
+            }
         }
         onboardingWindow?.present()
     }
@@ -342,6 +353,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 promptRestart(message: "中键权限已授权", info: "重启 Intent Capture 后中键监听即生效。")
             }
         case .screenRecording:
+            // 屏幕录制必须重启才生效。向导内先置恢复标记：无论走我们的"立即重启"还是
+            // 系统设置的"退出并重新打开"，重启回来都能自动重开向导收尾。
+            if fromWizard { settings.onboardingResumeAfterRestart = true }
             promptRestart(message: "屏幕录制已授权", info: "系统要求重启 App 后此权限才生效。")
         }
     }

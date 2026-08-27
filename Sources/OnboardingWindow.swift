@@ -7,6 +7,8 @@ import AppKit
 /// 无需切回来点。按钮统一走 `onHeal`（= AppDelegate 的三态自愈流程，单一真相源）。
 final class OnboardingWindow: NSWindow {
     private let content: OnboardingContentView
+    /// 用户点「完成 / 稍后」主动关闭时触发（重启导致的终止不走这里，故不会清掉恢复标记）。
+    var onDismiss: (() -> Void)?
 
     init(onGranted: @escaping (PermissionKind) -> Void) {
         content = OnboardingContentView(onGranted: onGranted)
@@ -38,6 +40,7 @@ final class OnboardingWindow: NSWindow {
 
     override func close() {
         content.stopWatching()
+        onDismiss?()
         super.close()
     }
 }
@@ -201,8 +204,10 @@ final class OnboardingContentView: NSView {
     private func initiate(_ kind: PermissionKind) {
         let state = PermissionEvaluator.state(of: kind)
         guard state != .granted else { return }
-        Toast.show("请在系统设置中允许\(kind.displayName)，授权后会自动切回本向导。")
+        Toast.show("请在系统设置中允许\(kind.displayName)，向导会等待并自动打勾。")
         PermissionHealer.heal(kind, state: state)
+        // 进入等待态：转圈直到 watcher 侦测到授权成功再翻绿。
+        rows.first { $0.kind == kind }?.showPending()
     }
 
     // MARK: 轮询与刷新
@@ -283,6 +288,13 @@ final class PermissionRowView: NSView {
     private let trailingContainer = NSView()
     private let checkView = NSImageView()
     private let actionButton = AccentFilledButton(title: "去授权")
+    private let spinner = NSProgressIndicator()
+    private let pendingLabel = NSTextField(labelWithString: "等待授权")
+    private lazy var pendingStack = NSStackView(views: [pendingLabel, spinner])
+
+    /// 尾部三态显示：按钮（去授权/一键修复）/ 等待授权（转圈）/ 绿色对号。
+    private enum Trailing { case button, pending, check }
+    private var isPending = false
 
     override var isFlipped: Bool { true }
 
@@ -318,9 +330,23 @@ final class PermissionRowView: NSView {
         actionButton.target = self
         actionButton.action = #selector(actionTapped)
         actionButton.translatesAutoresizingMaskIntoConstraints = false
+
+        spinner.style = .spinning
+        spinner.controlSize = .small
+        spinner.isDisplayedWhenStopped = false
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        pendingLabel.font = .systemFont(ofSize: 12)
+        pendingLabel.textColor = Design.Color.textSecondary
+        pendingStack.orientation = .horizontal
+        pendingStack.spacing = 6
+        pendingStack.alignment = .centerY
+        pendingStack.isHidden = true
+        pendingStack.translatesAutoresizingMaskIntoConstraints = false
+
         trailingContainer.translatesAutoresizingMaskIntoConstraints = false
         trailingContainer.addSubview(checkView)
         trailingContainer.addSubview(actionButton)
+        trailingContainer.addSubview(pendingStack)
 
         [tile, textStack, trailingContainer].forEach(addSubview)
 
@@ -346,39 +372,70 @@ final class PermissionRowView: NSView {
             actionButton.centerYAnchor.constraint(equalTo: trailingContainer.centerYAnchor),
             actionButton.heightAnchor.constraint(equalToConstant: 28),
             actionButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
+            pendingStack.trailingAnchor.constraint(equalTo: trailingContainer.trailingAnchor),
+            pendingStack.centerYAnchor.constraint(equalTo: trailingContainer.centerYAnchor),
             trailingContainer.leadingAnchor.constraint(greaterThanOrEqualTo: textStack.trailingAnchor, constant: 10)
         ])
     }
 
+    /// 进入"等待授权"态：点了「去授权」后显示转圈，直到 watcher 侦测到真的授权成功。
+    func showPending() {
+        isPending = true
+        setTrailing(.pending)
+    }
+
+    private func setTrailing(_ mode: Trailing) {
+        actionButton.isHidden = mode != .button
+        pendingStack.isHidden = mode != .pending
+        checkView.isHidden = mode != .check
+        if mode == .pending { spinner.startAnimation(nil) } else { spinner.stopAnimation(nil) }
+    }
+
     required init?(coder: NSCoder) { fatalError() }
 
-    /// 带动画翻绿：按钮淡出、对号淡入放大，让"去授权 → ✓"的变化被看见。
+    /// 授权成功后翻绿：图标块淡入绿色、对号带弹性缩放蹦出来（绕中心），让变化不生硬。
     func revealGranted() {
-        update(state: .granted)
-        checkView.alphaValue = 0
-        checkView.layer?.setAffineTransform(CGAffineTransform(scaleX: 0.6, y: 0.6))
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.32
-            ctx.allowsImplicitAnimation = true
-            checkView.animator().alphaValue = 1
-            checkView.layer?.setAffineTransform(.identity)
-        }
+        isPending = false
+        tile.layer?.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.14).cgColor
+        iconView.contentTintColor = .systemGreen
+        setTrailing(.check)
+
+        guard let layer = checkView.layer else { return }
+        layoutSubtreeIfNeeded()                          // 确保 frame 已定，anchorPoint 换算才准
+        let f = checkView.frame
+        layer.anchorPoint = CGPoint(x: 0.5, y: 0.5)
+        layer.position = CGPoint(x: f.midX, y: f.midY)   // 补偿 anchorPoint 变化，保持居中
+
+        let pop = CASpringAnimation(keyPath: "transform.scale")
+        pop.fromValue = 0.3
+        pop.toValue = 1.0
+        pop.damping = 11
+        pop.stiffness = 210
+        pop.initialVelocity = 9
+        pop.duration = pop.settlingDuration
+        layer.add(pop, forKey: "pop")
+
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = 0
+        fade.toValue = 1
+        fade.duration = 0.2
+        layer.add(fade, forKey: "fade")
     }
 
     func update(state: PermissionState) {
         switch state {
         case .granted:
+            isPending = false
             tile.layer?.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.14).cgColor
             iconView.contentTintColor = .systemGreen
-            checkView.isHidden = false
-            actionButton.isHidden = true
+            setTrailing(.check)
         case .notGranted, .stale:
             tile.layer?.backgroundColor = Design.Color.accentTint(0.12).cgColor
             iconView.contentTintColor = Design.Color.accent
-            checkView.isHidden = true
-            actionButton.isHidden = false
             actionButton.title = (state == .stale) ? "一键修复" : "去授权"
             actionButton.needsDisplay = true
+            // 已在等待态就保持转圈（别被每 0.5s 的轮询打回按钮），否则显示按钮。
+            setTrailing(isPending ? .pending : .button)
         }
     }
 

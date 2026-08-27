@@ -100,6 +100,12 @@ final class AppSettings {
         set { defaults.set(newValue, forKey: "onboarding.lastSeenBuild") }
     }
 
+    /// 向导内授权屏幕录制需重启时置位；重启后据此自动重开向导，避免"退出并重新打开"把向导弄没了。
+    var onboardingResumeAfterRestart: Bool {
+        get { defaults.bool(forKey: "onboarding.resumeAfterRestart") }
+        set { defaults.set(newValue, forKey: "onboarding.resumeAfterRestart") }
+    }
+
     /// 全局主题强调色（十六进制），应用于侧边栏高亮、按钮描边与中键轮盘。
     static let defaultAccentHex = "#2EA6C7"
 
