@@ -244,13 +244,15 @@ final class OnboardingContentView: NSView {
         updateProgress()
     }
 
-    /// 关系统设置页 → 把向导窗切到前台 → 略等再翻绿（+ 触发授权后侧效应）。
+    /// 关系统设置页 → 略等系统收起页面 → 把向导窗切到最前并同一刻翻绿 → 触发授权后侧效应。
+    /// 切前台与翻绿放在同一时刻，确保用户正看着向导时才看到「去授权 → ✓」的变化。
     private func revealGrantedWithFocus(_ row: PermissionRowView) {
         hideSystemSettings()
-        window?.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
             guard let self = self else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            self.window?.makeKeyAndOrderFront(nil)
+            self.window?.orderFrontRegardless()
             row.revealGranted()
             self.revealing.remove(row.kind)
             self.revealed.insert(row.kind)

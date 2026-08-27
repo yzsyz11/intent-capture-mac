@@ -46,7 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showOnboarding() {
         if onboardingWindow == nil {
-            onboardingWindow = OnboardingWindow(onGranted: { [weak self] kind in self?.onPermissionGranted(kind) })
+            onboardingWindow = OnboardingWindow(onGranted: { [weak self] kind in
+                self?.applyGrantedSideEffects(kind, fromWizard: true)
+            })
         }
         onboardingWindow?.present()
     }
@@ -322,14 +324,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         watcher.start()
     }
 
-    /// 授权生效后的收尾：中键尝试即时启用，起不来则可靠重启；屏幕录制必须重启一次。
+    /// 授权生效后的收尾（菜单 / 设置页路径）：带 toast 反馈。
     private func onPermissionGranted(_ kind: PermissionKind) {
+        applyGrantedSideEffects(kind, fromWizard: false)
+    }
+
+    /// 授权生效后的侧效应：中键尝试即时启用，起不来才可靠重启；屏幕录制必须重启一次。
+    /// `fromWizard=true` 时不弹"已开启"toast——向导里绿色对号本身就是反馈，避免多余弹窗。
+    func applyGrantedSideEffects(_ kind: PermissionKind, fromWizard: Bool) {
         switch kind {
         case .accessibility:
             settings.middleClickEnabled = true
             startMouseMonitor()
             if middleClickStatus == "中键监听：运行中" {
-                Toast.show("中键权限已开启")
+                if !fromWizard { Toast.show("中键权限已开启") }
             } else {
                 promptRestart(message: "中键权限已授权", info: "重启 Intent Capture 后中键监听即生效。")
             }
