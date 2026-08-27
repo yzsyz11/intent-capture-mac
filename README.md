@@ -1,151 +1,86 @@
 # Intent Capture
 
-Intent Capture is a lightweight native macOS utility for effortless screenshot, OCR, and color-picking workflows. It is built to stay out of the way: live quietly in the menu bar, launch actions instantly from hotkeys or the mouse middle button, and finish common capture tasks without opening a heavy editor.
+轻量原生 macOS 效率工具：**鼠标中键长按弹出环形菜单**，一个手势直达截图、OCR、取色、区域翻译，常驻菜单栏、不打扰。
 
-Intent Capture 是一个轻量级 macOS 原生效率工具，用于无感、便捷地完成截图、OCR 文字识别和取色。它安静常驻菜单栏，通过快捷键或鼠标中键快速触发，不打开笨重编辑器也能完成常用捕获动作。
+> A lightweight native macOS capture utility — long-press the mouse middle button to open a radial action menu for screenshot, OCR, color-pick and region-translate.
 
-> Status: macOS version is usable as an early open-source build. A Windows version exists on another machine and may be organized later.
->
-> 状态：macOS 版本目前是可用的早期开源版本。Windows 版本在另一台电脑上，之后可以再整理成双端项目。
+原作者 / Original author: **[yzsyz11](https://github.com/yzsyz11)** · © 2026
 
-## Features / 功能
+---
 
-- Effortless by default: stays in the menu bar and only appears when you call it
-- Fast and convenient: trigger actions with global hotkeys, the action panel, or the mouse middle button
-- Lightweight native app: focused on capture, OCR, and color picking without a bulky editing workflow
-- Compact action panel for choosing the next task quickly
-- Screenshot region to clipboard
-- Screenshot region to file
-- Screenshot region to file and clipboard
-- OCR selected region and copy recognized text
-- Pick screen color and copy HEX/RGB values
-- Configurable default action, save folder, color format, and hotkeys
-- Optional middle-click trigger: short press runs the latest action, long press opens the action panel
-- In-app toast messages without relying on macOS notification permission
+## ✨ 特色
 
-- 默认无感：常驻菜单栏，不主动打扰，需要时才出现
-- 快速便捷：支持全局快捷键、动作面板和鼠标中键触发
-- 原生轻量：专注截图、OCR 和取色，不做笨重复杂的编辑器流程
-- 紧凑动作面板，快速选择下一步操作
-- 框选区域截图并复制
-- 框选区域截图并保存
-- 框选区域截图，保存并复制
-- 框选区域 OCR，并复制识别文字
-- 屏幕取色，并复制 HEX/RGB 色值
-- 可设置默认动作、保存目录、色值格式和快捷键
-- 可选鼠标中键触发：短按执行最近动作，长按打开动作面板
-- 应用内轻量提示，不依赖 macOS 系统通知权限
+- **中键长按环形菜单**——按住中键，动作环绕光标绽放，滑动选中、松手执行；短按直接跑默认动作。这是最顺手的地方，用过就回不去。
+- **框选即所得**——截图复制 / 保存 / 保存并复制、区域 OCR 复制文字、屏幕取色复制 HEX·RGB，不开任何笨重编辑器。
+- **区域翻译**——框选屏幕任意区域，原地浮层给出译文（DeepSeek 在线 / Apple 原生，macOS 15+）。
+- **剪贴板拓展坞**——历史预览、编辑、固定、批量删除、搜索与键盘导航。
+- **权限引导向导**——首启/升级自动引导开通权限，一键修复，省心。
+- **常驻菜单栏 + 全局快捷键 + 自定义主题色**。
 
-## Requirements / 环境要求
+## 📸 截图
+
+| 中键长按 · 环形动作菜单 | 原位置区域翻译 |
+|---|---|
+| ![环形菜单](docs/screenshots/radial.png) | ![区域翻译](docs/screenshots/translate.png) |
+
+| 剪贴板拓展坞（文本 / 图片 / 色值） | 权限引导向导 |
+|---|---|
+| ![剪贴板](docs/screenshots/clipboard.png) | ![向导](docs/screenshots/onboarding.png) |
+
+| 功能与翻译引擎设置 | 保存位置与色值格式 |
+|---|---|
+| ![功能](docs/screenshots/features.png) | ![保存位置](docs/screenshots/save-location.png) |
+
+## 🚀 快速上手
+
+1. 从 [Releases](https://github.com/yzsyz11/intent-capture-mac/releases) 下载 `IntentCapture-mac-arm64.dmg`，拖 `IntentCapture.app` 进「应用程序」。
+2. 首次打开按下面「首次打开」一节绕过 Gatekeeper。
+3. 打开后按向导开通两项权限（辅助功能 + 屏幕录制）。
+4. **按住鼠标中键**试试——环形菜单会绽放，滑到想要的动作松手即可；**短按中键**直接执行默认动作。
+
+## 🔓 首次打开（重要）
+
+本应用为自签、未经 Apple 公证，首次打开会被 Gatekeeper 拦下。二选一：
+
+- **右键打开**：在「应用程序」里右键（Control 点按）`IntentCapture.app` → 打开 → 再点「打开」。
+- 若提示「已损坏 / 无法验证」，在「终端」执行一次即可：
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/IntentCapture.app
+  ```
+
+之后正常双击打开。
+
+## 🔐 权限
+
+| 权限 | 用途 | 位置 |
+|---|---|---|
+| 辅助功能 | 鼠标中键全局监听 | 系统设置 → 隐私与安全性 → 辅助功能 |
+| 屏幕录制 | 截图 / 取色 / OCR | 系统设置 → 隐私与安全性 → 屏幕录制 |
+
+App 内「权限设置向导」会带你走完，屏幕录制授权后需重启一次 App 生效。
+
+## 💻 环境要求
 
 - Apple Silicon Mac
-- macOS 13 or later
-- Xcode Command Line Tools
+- macOS 13 或更高
 
-Install Command Line Tools:
-
-```bash
-xcode-select --install
-```
-
-## Build / 构建
-
-Typecheck only:
+## 🛠 从源码构建（可选）
 
 ```bash
-bash scripts/verify-macos.sh
+xcode-select --install            # 一次性：命令行工具
+bash scripts/verify-macos.sh      # 仅类型检查
+bash scripts/package-macos.sh     # 构建 .app 与 .dmg → release/
 ```
 
-Build `.app` and `.dmg`:
+跨版本保留系统权限依赖稳定签名身份，先运行一次：
 
 ```bash
-bash scripts/package-macos.sh
+bash scripts/create-signing-identity.sh
 ```
 
-Output:
+## 📄 许可与署名
 
-```text
-release/IntentCapture-mac-arm64.dmg
-```
+基于 [MIT 许可](LICENSE) 开源：**你可以自由使用、修改、再分发，但必须保留原作者 yzsyz11 的版权署名。** 抹去署名或冒充原作者属于违反许可。
 
-Local run helper:
-
-```bash
-chmod +x script/build_and_run.sh
-./script/build_and_run.sh --verify
-```
-
-Note: `script/build_and_run.sh` is a local development helper. It rebuilds the app and replaces `/Applications/IntentCapture.app`.
-
-注意：`script/build_and_run.sh` 是本机开发脚本，会重新构建并替换 `/Applications/IntentCapture.app`。
-
-## Permissions / 权限
-
-Screenshot, OCR, and color picking require Screen Recording permission:
-
-```text
-System Settings -> Privacy & Security -> Screen Recording
-```
-
-Middle-click global listening requires Accessibility permission:
-
-```text
-System Settings -> Privacy & Security -> Accessibility
-```
-
-截图、OCR 和取色需要屏幕录制权限：
-
-```text
-系统设置 -> 隐私与安全性 -> 屏幕录制
-```
-
-鼠标中键全局监听需要辅助功能权限：
-
-```text
-系统设置 -> 隐私与安全性 -> 辅助功能
-```
-
-## Distribution / 分发
-
-The package script can create a DMG that users can download and install by dragging `IntentCapture.app` into Applications.
-
-```bash
-bash scripts/package-macos.sh
-```
-
-By default, the app is signed with an ad-hoc identity. That is enough for local testing, but public distribution on macOS should use an Apple Developer ID certificate and notarization to reduce Gatekeeper warnings.
-
-默认脚本使用 ad-hoc 签名，适合本机测试。公开分发给其他 macOS 用户时，建议使用 Apple Developer ID 证书签名并公证，减少 Gatekeeper 拦截。
-
-Build with a Developer ID certificate:
-
-```bash
-CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" bash scripts/package-macos.sh
-```
-
-Notarize:
-
-```bash
-export APPLE_ID="you@example.com"
-export APPLE_TEAM_ID="TEAMID"
-export APPLE_APP_PASSWORD="xxxx-xxxx-xxxx-xxxx"
-bash scripts/notarize-macos.sh
-```
-
-Do not commit Apple ID credentials or app-specific passwords.
-
-不要把 Apple ID、团队 ID 之外的敏感凭据或 app-specific password 提交到仓库。
-
-## Roadmap / 计划
-
-- Publish signed and notarized macOS releases
-- Organize the Windows version into the same public project
-- Consider a shared bilingual documentation site after both platforms are stable
-
-- 发布签名并公证的 macOS 安装包
-- 后续把 Windows 版本整理进同一个公开项目
-- 双端稳定后，再考虑做中英双语文档页
-
-## License / 许可证
-
-MIT License. See [LICENSE](LICENSE).
+原作者：[yzsyz11](https://github.com/yzsyz11)　·　欢迎 star、fork、提 issue。
