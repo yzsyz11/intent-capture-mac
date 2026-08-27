@@ -21,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHotkeys()
         startClipboardHistory()
         startMouseMonitor()
+        // 使用截图/取色/OCR 若发现屏幕录制没授权，统一弹权限向导（而非直接甩到系统设置）。
+        captureService.onNeedScreenRecording = { [weak self] in self?.showOnboarding() }
         // 评估两项权限，把当前已生效状态记入历史（供三态判定与升级引导使用）。
         recordPermissionBaseline()
         maybeShowOnboarding()
@@ -44,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showOnboarding() {
         if onboardingWindow == nil {
-            onboardingWindow = OnboardingWindow(onHeal: { [weak self] kind in self?.healPermission(kind) })
+            onboardingWindow = OnboardingWindow(onGranted: { [weak self] kind in self?.onPermissionGranted(kind) })
         }
         onboardingWindow?.present()
     }

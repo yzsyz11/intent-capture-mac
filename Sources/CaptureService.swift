@@ -8,6 +8,9 @@ final class CaptureService {
     private var activeSelectionWindow: RegionSelectionWindow?
     private var activeTranslationOverlay: TranslationOverlayWindow?
 
+    /// 使用截图/取色/OCR 时若发现屏幕录制未授权，交由此回调统一弹权限向导（而非直接甩到系统设置）。
+    var onNeedScreenRecording: (() -> Void)?
+
     func perform(_ action: CaptureAction) {
         guard activeSelectionWindow == nil else { return }
         guard ensureScreenCaptureAccess() else { return }
@@ -244,17 +247,10 @@ final class CaptureService {
         if CGPreflightScreenCaptureAccess() {
             return true
         }
-
-        CGRequestScreenCaptureAccess()
-        Toast.show("屏幕录制权限未对当前 App 生效。请开启权限后退出并重新打开 Intent Capture。")
-        openScreenRecordingSettings()
+        // 缺权限时不再直接甩到系统设置 + 手动重启；统一弹权限向导，走"去授权→自动返回→翻绿→重启"闭环。
+        Toast.show("屏幕录制未授权，已为你打开权限向导，开启后即可使用。")
+        onNeedScreenRecording?()
         return false
-    }
-
-    private func openScreenRecordingSettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            NSWorkspace.shared.open(url)
-        }
     }
 
     private func format(_ color: NSColor) -> String {

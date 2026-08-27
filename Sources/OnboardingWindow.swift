@@ -8,8 +8,8 @@ import AppKit
 final class OnboardingWindow: NSWindow {
     private let content: OnboardingContentView
 
-    init(onHeal: @escaping (PermissionKind) -> Void) {
-        content = OnboardingContentView(onHeal: onHeal)
+    init(onGranted: @escaping (PermissionKind) -> Void) {
+        content = OnboardingContentView(onGranted: onGranted)
         super.init(
             contentRect: CGRect(x: 0, y: 0, width: 400, height: 520),
             styleMask: [.titled, .closable, .fullSizeContentView],
@@ -46,7 +46,8 @@ final class OnboardingWindow: NSWindow {
 
 final class OnboardingContentView: NSView {
     var onFinish: (() -> Void)?
-    private let onHeal: (PermissionKind) -> Void
+    /// 某权限授权到手且已在向导里翻绿后回调（AppDelegate 据此启用中键 / 提示屏幕录制重启）。
+    private let onGranted: (PermissionKind) -> Void
 
     private let progressLabel = NSTextField(labelWithString: "")
     private let segments: [NSView] = [NSView(), NSView()]
@@ -54,10 +55,14 @@ final class OnboardingContentView: NSView {
     private let finishButton = NSButton()
     private var watcher: PermissionWatcher?
 
+    private var revealed: Set<PermissionKind> = []   // 已翻绿显示的行
+    private var revealing: Set<PermissionKind> = []  // 正在执行"切回窗口再翻绿"过渡的行
+    private var initialized = false                    // 首帧：打开时已授权的行直接显示绿，无过渡
+
     override var isFlipped: Bool { true }
 
-    init(onHeal: @escaping (PermissionKind) -> Void) {
-        self.onHeal = onHeal
+    init(onGranted: @escaping (PermissionKind) -> Void) {
+        self.onGranted = onGranted
         rows = [
             PermissionRowView(kind: .accessibility, symbol: "computermouse", subtitle: "中键短按 · 长按环形菜单"),
             PermissionRowView(kind: .screenRecording, symbol: "camera.viewfinder", subtitle: "截图 · 取色 · OCR")
@@ -116,7 +121,7 @@ final class OnboardingContentView: NSView {
         separator.translatesAutoresizingMaskIntoConstraints = false
         for r in rows {
             r.translatesAutoresizingMaskIntoConstraints = false
-            r.onAction = { [weak self] kind in self?.onHeal(kind) }
+            r.onAction = { [weak self] kind in self?.initiate(kind) }
             card.addSubview(r)
         }
         card.addSubview(separator)
@@ -191,6 +196,16 @@ final class OnboardingContentView: NSView {
         ])
     }
 
+    // MARK: 点「去授权 / 一键修复」→ 只负责发起（清僵尸 + 拉授权 + 开系统设置页）。
+    // 拿到授权后的"切回窗口 + 翻绿"由 watcher 统一处理，保证用户正看着向导时才变对号。
+
+    private func initiate(_ kind: PermissionKind) {
+        let state = PermissionEvaluator.state(of: kind)
+        guard state != .granted else { return }
+        Toast.show("请在系统设置中允许\(kind.displayName)，授权后会自动切回本向导。")
+        PermissionHealer.heal(kind, state: state)
+    }
+
     // MARK: 轮询与刷新
 
     func startWatching() {
@@ -204,12 +219,55 @@ final class OnboardingContentView: NSView {
     }
 
     private func refresh() {
-        var grantedCount = 0
         for row in rows {
             let state = PermissionEvaluator.state(of: row.kind)
-            row.update(state: state)
-            if state == .granted { grantedCount += 1 }
+            if state == .granted {
+                if revealed.contains(row.kind) || revealing.contains(row.kind) {
+                    continue  // 已绿 / 正在过渡，别重复触发
+                }
+                if !initialized {
+                    // 打开向导时就已授权：直接显示绿，无需过渡动画。
+                    revealed.insert(row.kind)
+                    row.update(state: .granted)
+                } else {
+                    // 会话期间刚拿到授权：先切回向导窗，再翻绿，让用户亲眼看到变化。
+                    revealing.insert(row.kind)
+                    revealGrantedWithFocus(row)
+                }
+            } else {
+                revealed.remove(row.kind)
+                revealing.remove(row.kind)
+                row.update(state: state)
+            }
         }
+        initialized = true
+        updateProgress()
+    }
+
+    /// 关系统设置页 → 把向导窗切到前台 → 略等再翻绿（+ 触发授权后侧效应）。
+    private func revealGrantedWithFocus(_ row: PermissionRowView) {
+        hideSystemSettings()
+        window?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+            guard let self = self else { return }
+            row.revealGranted()
+            self.revealing.remove(row.kind)
+            self.revealed.insert(row.kind)
+            self.updateProgress()
+            self.onGranted(row.kind)
+        }
+    }
+
+    private func hideSystemSettings() {
+        for app in NSWorkspace.shared.runningApplications
+        where app.bundleIdentifier == "com.apple.systempreferences" {
+            app.hide()
+        }
+    }
+
+    private func updateProgress() {
+        let grantedCount = revealed.count
         let total = rows.count
         let attr = NSMutableAttributedString(
             string: "已完成 ",
@@ -280,6 +338,7 @@ final class PermissionRowView: NSView {
         checkView.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "已生效")
         checkView.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 22, weight: .regular)
         checkView.contentTintColor = .systemGreen
+        checkView.wantsLayer = true
         checkView.translatesAutoresizingMaskIntoConstraints = false
         actionButton.target = self
         actionButton.action = #selector(actionTapped)
@@ -317,6 +376,19 @@ final class PermissionRowView: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// 带动画翻绿：按钮淡出、对号淡入放大，让"去授权 → ✓"的变化被看见。
+    func revealGranted() {
+        update(state: .granted)
+        checkView.alphaValue = 0
+        checkView.layer?.setAffineTransform(CGAffineTransform(scaleX: 0.6, y: 0.6))
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.32
+            ctx.allowsImplicitAnimation = true
+            checkView.animator().alphaValue = 1
+            checkView.layer?.setAffineTransform(.identity)
+        }
+    }
 
     func update(state: PermissionState) {
         switch state {
