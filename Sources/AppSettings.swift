@@ -5,7 +5,10 @@ final class AppSettings {
     static let shared = AppSettings()
 
     private let defaults = UserDefaults.standard
-    private let defaultSaveDirectory = URL(fileURLWithPath: "/Users/a1/Downloads/截图", isDirectory: true)
+    /// 默认截图目录：当前用户下载文件夹里的「截图」子目录（通用，不写死用户名）。
+    private let defaultSaveDirectory = FileManager.default
+        .homeDirectoryForCurrentUser
+        .appendingPathComponent("Downloads/截图", isDirectory: true)
 
     private init() {
         // 一次性清理旧的 Keychain 项：ad-hoc 每次重签名身份都变，旧 key 会让系统在读取时反复弹钥匙串授权。

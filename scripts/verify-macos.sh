@@ -13,6 +13,7 @@ SOURCES=(
   "$ROOT/Sources/PermissionState.swift"
   "$ROOT/Sources/PermissionHealer.swift"
   "$ROOT/Sources/OnboardingWindow.swift"
+  "$ROOT/Sources/AboutWindow.swift"
   "$ROOT/Sources/Design.swift"
   "$ROOT/Sources/Components.swift"
   "$ROOT/Sources/CaptureAction.swift"

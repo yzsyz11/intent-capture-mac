@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var middleClickStatus = "中键监听：未启动"
     private var permissionWatcher: PermissionWatcher?
     private var onboardingWindow: OnboardingWindow?
+    private var aboutWindow: AboutWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMainMenu()
@@ -70,6 +71,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showOnboarding()
     }
 
+    /// 「关于」面板：app 身份 + 版本 + 原作者署名（归属 / 防伪）。
+    @objc private func showAbout() {
+        if aboutWindow == nil { aboutWindow = AboutWindow() }
+        aboutWindow?.present()
+    }
+
     /// 启动时评估两项权限：判为已生效者顺手写入历史标记与构建签名，
     /// 使后续能区分「从没授过」与「曾授过现失效（僵尸）」。仅记录，不弹窗。
     private func recordPermissionBaseline() {
@@ -98,6 +105,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
+        appMenu.addItem(NSMenuItem(title: "关于 Intent Capture", action: #selector(showAbout), keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem.separator())
         appMenu.addItem(NSMenuItem(title: "设置...", action: #selector(showSettings), keyEquivalent: ","))
         appMenu.addItem(NSMenuItem(title: "权限设置向导...", action: #selector(openOnboardingGuide), keyEquivalent: ""))
         appMenu.addItem(NSMenuItem(title: "检查屏幕录制权限", action: #selector(checkScreenCapturePermission), keyEquivalent: ""))
@@ -152,6 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem(title: "权限设置向导...", action: #selector(openOnboardingGuide), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "检查屏幕录制权限", action: #selector(checkScreenCapturePermission), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "开启中键权限...", action: #selector(requestAccessibilityPermission), keyEquivalent: ""))
+        menu.addItem(NSMenuItem(title: "关于 Intent Capture", action: #selector(showAbout), keyEquivalent: ""))
         menu.addItem(NSMenuItem(title: "退出", action: #selector(quit), keyEquivalent: "q"))
         menu.items.forEach { $0.target = self }
         statusItem?.menu = menu
