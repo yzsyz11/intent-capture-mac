@@ -56,8 +56,7 @@ final class OnboardingContentView: NSView {
     private var watcher: PermissionWatcher?
 
     private var revealed: Set<PermissionKind> = []   // 已翻绿显示的行
-    private var revealing: Set<PermissionKind> = []  // 正在执行"切回窗口再翻绿"过渡的行
-    private var initialized = false                    // 首帧：打开时已授权的行直接显示绿，无过渡
+    private var initialized = false                   // 首帧：打开时已授权的行直接显示绿，无动画/无侧效应
 
     override var isFlipped: Bool { true }
 
@@ -222,50 +221,24 @@ final class OnboardingContentView: NSView {
         for row in rows {
             let state = PermissionEvaluator.state(of: row.kind)
             if state == .granted {
-                if revealed.contains(row.kind) || revealing.contains(row.kind) {
-                    continue  // 已绿 / 正在过渡，别重复触发
-                }
-                if !initialized {
-                    // 打开向导时就已授权：直接显示绿，无需过渡动画。
-                    revealed.insert(row.kind)
-                    row.update(state: .granted)
+                if revealed.contains(row.kind) { continue }  // 已绿，别重复触发
+                revealed.insert(row.kind)
+                // 向导始终开着：不关系统设置页、不动窗口，只原地把这行翻绿。
+                if initialized {
+                    // 会话期间刚拿到授权：带动画翻绿 + 授权后侧效应（启用中键 / 屏幕录制先绿再重启）。
+                    row.revealGranted()
+                    onGranted(row.kind)
                 } else {
-                    // 会话期间刚拿到授权：先切回向导窗，再翻绿，让用户亲眼看到变化。
-                    revealing.insert(row.kind)
-                    revealGrantedWithFocus(row)
+                    // 打开向导时就已授权：直接显示绿，不做动画、不触发侧效应。
+                    row.update(state: .granted)
                 }
             } else {
                 revealed.remove(row.kind)
-                revealing.remove(row.kind)
                 row.update(state: state)
             }
         }
         initialized = true
         updateProgress()
-    }
-
-    /// 关系统设置页 → 略等系统收起页面 → 把向导窗切到最前并同一刻翻绿 → 触发授权后侧效应。
-    /// 切前台与翻绿放在同一时刻，确保用户正看着向导时才看到「去授权 → ✓」的变化。
-    private func revealGrantedWithFocus(_ row: PermissionRowView) {
-        hideSystemSettings()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            guard let self = self else { return }
-            NSApp.activate(ignoringOtherApps: true)
-            self.window?.makeKeyAndOrderFront(nil)
-            self.window?.orderFrontRegardless()
-            row.revealGranted()
-            self.revealing.remove(row.kind)
-            self.revealed.insert(row.kind)
-            self.updateProgress()
-            self.onGranted(row.kind)
-        }
-    }
-
-    private func hideSystemSettings() {
-        for app in NSWorkspace.shared.runningApplications
-        where app.bundleIdentifier == "com.apple.systempreferences" {
-            app.hide()
-        }
     }
 
     private func updateProgress() {
