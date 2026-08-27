@@ -40,16 +40,21 @@
 
 ## 🔓 首次打开（重要）
 
-本应用为自签、未经 Apple 公证，首次打开会被 Gatekeeper 拦下。二选一：
+本应用为自签、未经 Apple 公证，首次打开会被 Gatekeeper 拦下。用下面任一方法放行（**方法 1 已实测可用**）：
 
-- **右键打开**：在「应用程序」里右键（Control 点按）`IntentCapture.app` → 打开 → 再点「打开」。
-- 若提示「已损坏 / 无法验证」，在「终端」执行一次即可：
+**方法 1 · 系统设置放行（推荐）**
+1. 先**双击一次** `IntentCapture.app`，会弹「无法打开」，点「完成」。
+2. 打开「系统设置」→「隐私与安全性」，**向下滚到「安全性」一节**。
+3. 会看到一行「已阻止使用 IntentCapture…」，点右侧「**仍要打开**」。
+4. 弹窗里再点一次「**仍要打开**」，按提示输入密码。之后正常双击即可。
 
-  ```bash
-  xattr -dr com.apple.quarantine /Applications/IntentCapture.app
-  ```
+**方法 2 · 右键打开**
+在「应用程序」里右键（Control 点按）`IntentCapture.app` →「打开」→ 再点「打开」。
 
-之后正常双击打开。
+**方法 3 · 终端去隔离**（若提示「已损坏」）
+```bash
+xattr -dr com.apple.quarantine /Applications/IntentCapture.app
+```
 
 ## 🔐 权限
 
