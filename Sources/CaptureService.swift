@@ -28,14 +28,14 @@ final class CaptureService {
 
     private func handle(_ action: CaptureAction, rect: CGRect) {
         guard let image = capture(rect: rect) else {
-            Toast.show("截图失败，请检查屏幕录制权限")
+            Toast.show("截图失败，请检查屏幕录制权限", tone: .danger)
             return
         }
 
         switch action {
         case .screenshotCopy:
             copy(image)
-            Toast.show("截图已复制，未保存文件", image: image)
+            Toast.show("截图已复制，未保存文件", tone: .success, image: image)
         case .screenshotSave:
             save(image, copyAfterSave: false)
         case .screenshotSaveAndCopy:
@@ -63,7 +63,7 @@ final class CaptureService {
         }
         selector.onCancel = { [weak self] in
             self?.activeSelectionWindow = nil
-            Toast.show("已取消截图")
+            Toast.show("已取消截图", tone: .danger)
         }
         selector.show()
     }
@@ -84,18 +84,18 @@ final class CaptureService {
                     _ = window
                 }
                 guard let color = strongSelf.sampleColor(at: point) else {
-                    Toast.show("取色失败")
+                    Toast.show("取色失败", tone: .danger)
                     return
                 }
                 let value = strongSelf.format(color)
                 NSPasteboard.general.clearContents()
                 NSPasteboard.general.setString(value, forType: .string)
-                Toast.show("已复制 \(value)")
+                Toast.show("已复制 \(value)", tone: .success)
             }
         }
         selector.onCancel = { [weak self] in
             self?.activeSelectionWindow = nil
-            Toast.show("已取消取色")
+            Toast.show("已取消取色", tone: .danger)
         }
         selector.show()
     }
@@ -117,18 +117,18 @@ final class CaptureService {
         do {
             let url = try settings.buildFileURL()
             guard let data = image.pngData else {
-                Toast.show("保存失败：无法编码 PNG")
+                Toast.show("保存失败：无法编码 PNG", tone: .danger)
                 return
             }
             try data.write(to: url)
             if copyAfterSave {
                 copy(image)
-                Toast.show("已保存并复制：\(url.lastPathComponent)", image: image)
+                Toast.show("已保存并复制：\(url.lastPathComponent)", tone: .success, image: image)
             } else {
-                Toast.show("已保存：\(url.lastPathComponent)", image: image)
+                Toast.show("已保存：\(url.lastPathComponent)", tone: .success, image: image)
             }
         } catch {
-            Toast.show("保存失败：\(error.localizedDescription)")
+            Toast.show("保存失败：\(error.localizedDescription)", tone: .danger)
         }
     }
 
@@ -136,27 +136,27 @@ final class CaptureService {
         recognizeLines(image) { lines in
             let text = lines.map(\.text).joined(separator: "\n")
             guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                Toast.show("未识别到文字")
+                Toast.show("未识别到文字", tone: .warning)
                 return
             }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
             let preview = lines.first(where: { !$0.text.isEmpty })?.text ?? text
             let truncated = preview.count > 44 ? String(preview.prefix(44)) + "…" : preview
-            Toast.show("OCR 已复制：\(truncated)")
+            Toast.show("OCR 已复制：\(truncated)", tone: .success)
         }
     }
 
     /// 识别文字并保留每行归一化位置（Vision 坐标，左下原点）；`completion` 在主线程回调。
     private func recognizeLines(_ image: NSImage, completion: @escaping ([OCRLine]) -> Void) {
         guard let cgImage = image.ocrPreparedCGImage else {
-            DispatchQueue.main.async { Toast.show("OCR 失败") }
+            DispatchQueue.main.async { Toast.show("OCR 失败", tone: .danger) }
             return
         }
 
         let request = VNRecognizeTextRequest { request, error in
             if let error = error {
-                DispatchQueue.main.async { Toast.show("OCR 失败：\(error.localizedDescription)") }
+                DispatchQueue.main.async { Toast.show("OCR 失败：\(error.localizedDescription)", tone: .danger) }
                 return
             }
             let lines = (request.results as? [VNRecognizedTextObservation])?
@@ -185,7 +185,7 @@ final class CaptureService {
         case .deepseek:
             let deepseek = DeepSeekTranslator(apiKey: settings.deepSeekAPIKey)
             guard deepseek.isAvailable else {
-                Toast.show("未配置 DeepSeek API Key，请到设置 → 翻译中填写")
+                Toast.show("未配置 DeepSeek API Key，请到设置 → 翻译中填写", tone: .warning)
                 return
             }
             translator = deepseek
@@ -193,7 +193,7 @@ final class CaptureService {
             if #available(macOS 15.0, *) {
                 translator = AppleTranslator()
             } else {
-                Toast.show("Apple 原生翻译需要 macOS 15 或更新版本，请改用自定义大模型")
+                Toast.show("Apple 原生翻译需要 macOS 15 或更新版本，请改用自定义大模型", tone: .warning)
                 return
             }
         }
@@ -201,7 +201,7 @@ final class CaptureService {
         recognizeLines(image) { lines in
             let sources = lines.map(\.text)
             guard !sources.isEmpty else {
-                Toast.show("未识别到文字")
+                Toast.show("未识别到文字", tone: .warning)
                 return
             }
             Toast.show("翻译中…")
@@ -220,7 +220,7 @@ final class CaptureService {
                 } catch {
                     TranslationDebugLog.log("翻译失败: \(error)")
                     await MainActor.run {
-                        Toast.show("翻译失败：\(error.localizedDescription)")
+                        Toast.show("翻译失败：\(error.localizedDescription)", tone: .danger)
                     }
                 }
             }
@@ -248,7 +248,7 @@ final class CaptureService {
             return true
         }
         // 缺权限时不再直接甩到系统设置 + 手动重启；统一弹权限向导，走"去授权→自动返回→翻绿→重启"闭环。
-        Toast.show("屏幕录制未授权，已为你打开权限向导，开启后即可使用。")
+        Toast.show("屏幕录制未授权，已为你打开权限向导，开启后即可使用。", tone: .warning)
         onNeedScreenRecording?()
         return false
     }
@@ -326,7 +326,7 @@ private extension NSImage {
 }
 
 final class ToastWindow: NSPanel {
-    init(message: String, image: NSImage? = nil, onPreview: (() -> Void)? = nil) {
+    init(message: String, tone: FeedbackTone, image: NSImage? = nil, onPreview: (() -> Void)? = nil) {
         let hasImage = image != nil
         let size = CGSize(width: 420, height: hasImage ? 88 : 56)
         let screen = NSScreen.main?.frame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
@@ -344,7 +344,7 @@ final class ToastWindow: NSPanel {
         hasShadow = true
         ignoresMouseEvents = onPreview == nil
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let view = ToastView(message: message, image: image)
+        let view = ToastView(message: message, tone: tone, image: image)
         view.onPreview = onPreview
         contentView = view
     }
@@ -355,38 +355,12 @@ final class ToastWindow: NSPanel {
 }
 
 final class ToastView: NSView {
-    enum Tone {
-        case success
-        case warning
-        case failure
-        case info
-
-        var color: NSColor {
-            switch self {
-            case .success: return .systemGreen
-            case .warning: return .systemOrange
-            case .failure: return .systemRed
-            case .info: return .systemBlue
-            }
-        }
-
-        var symbolName: String {
-            switch self {
-            case .success: return "checkmark.circle.fill"
-            case .warning: return "exclamationmark.triangle.fill"
-            case .failure: return "xmark.circle.fill"
-            case .info: return "info.circle.fill"
-            }
-        }
-    }
-
     private let content: ToastContentView
     var onPreview: (() -> Void)? {
         didSet { updateTrackingAreas() }
     }
 
-    init(message: String, image: NSImage? = nil) {
-        let tone = Self.tone(for: message)
+    init(message: String, tone: FeedbackTone, image: NSImage? = nil) {
         let h: CGFloat = image != nil ? 88 : 56
         content = ToastContentView(message: message, image: image, tone: tone,
                                    frame: CGRect(x: 0, y: 0, width: 420, height: h))
@@ -400,7 +374,8 @@ final class ToastView: NSView {
         blur.blendingMode = .behindWindow
         blur.state = .active
         blur.wantsLayer = true
-        blur.layer?.cornerRadius = 16
+        // 无图=药丸形（更圆润），带图=大圆角。
+        blur.layer?.cornerRadius = image != nil ? 22 : h / 2
         blur.layer?.masksToBounds = true
         blur.layer?.borderWidth = 1
         blur.layer?.borderColor = tone.color.withAlphaComponent(0.5).cgColor
@@ -441,24 +416,12 @@ final class ToastView: NSView {
         }
     }
 
-    private static func tone(for message: String) -> Tone {
-        if message.contains("失败") || message.contains("不可用") || message.contains("未生效") || message.contains("未授权") {
-            return .failure
-        }
-        if message.contains("权限") || message.contains("取消") || message.contains("请") {
-            return .warning
-        }
-        if message.contains("已") || message.contains("成功") {
-            return .success
-        }
-        return .info
-    }
 }
 
 private final class ToastContentView: NSView {
     let thumbRect: CGRect
 
-    init(message: String, image: NSImage?, tone: ToastView.Tone, frame: NSRect) {
+    init(message: String, image: NSImage?, tone: FeedbackTone, frame: NSRect) {
         let hasImage = image != nil
         let thumbW: CGFloat = 96, thumbH: CGFloat = 68
         let thumbX = frame.width - thumbW - 14
@@ -534,13 +497,13 @@ private final class ToastContentView: NSView {
 enum Toast {
     private static var current: ToastWindow?
 
-    static func show(_ message: String, image: NSImage? = nil) {
+    static func show(_ message: String, tone: FeedbackTone = .info, image: NSImage? = nil) {
         DispatchQueue.main.async {
             current?.close()
             let onPreview: (() -> Void)? = image.map { img in
                 { ImagePreviewPanel.show(img) }
             }
-            let window = ToastWindow(message: message, image: image, onPreview: onPreview)
+            let window = ToastWindow(message: message, tone: tone, image: image, onPreview: onPreview)
             current = window
             window.orderFrontRegardless()
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) {

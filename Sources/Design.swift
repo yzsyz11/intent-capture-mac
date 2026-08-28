@@ -75,3 +75,32 @@ enum Design {
         }
     }
 }
+
+/// 全局反馈语气：主 Toast 与剪贴板 Dock 胶囊共用的单一颜色/图标真相源。
+/// 取代此前 Toast 的关键词猜色和 Dock 各自一套枚举。
+enum FeedbackTone {
+    case success   // 已完成：复制 / 保存 / 更新 / 开启 / 切换
+    case info      // 中性：操作指引、进行中
+    case warning   // 需留意：空结果、需用户处理
+    case danger    // 失败 / 已取消
+    case delete    // 删除（红色，垃圾桶图标）
+
+    var color: NSColor {
+        switch self {
+        case .success: return .systemGreen
+        case .info: return .systemBlue
+        case .warning: return .systemOrange
+        case .danger, .delete: return .systemRed
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .success: return "checkmark.circle.fill"
+        case .info: return "info.circle.fill"
+        case .warning: return "exclamationmark.triangle.fill"
+        case .danger: return "xmark.circle.fill"
+        case .delete: return "trash.circle.fill"
+        }
+    }
+}

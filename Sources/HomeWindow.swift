@@ -737,7 +737,7 @@ final class SavingSectionView: NSView {
         if !path.isEmpty { settings.saveDirectory = URL(fileURLWithPath: path, isDirectory: true) }
         settings.colorFormat = colorFormat.selectedSegment == 1 ? "RGB" : "HEX"
         onSave()
-        Toast.show("设置已保存")
+        Toast.show("设置已保存", tone: .success)
     }
 }
 
@@ -805,9 +805,9 @@ final class TriggerSectionView: NSView {
             title.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Design.Layout.contentInset)
         ])
 
-        actionHotkey.onChange = { hotkey in settings.actionHotkey = hotkey; onSave(); Toast.show("动作快捷键已更新：\(hotkey.displayText)") }
-        panelHotkey.onChange = { hotkey in settings.panelHotkey = hotkey; onSave(); Toast.show("主页快捷键已更新：\(hotkey.displayText)") }
-        clipboardDockHotkey.onChange = { hotkey in settings.clipboardDockHotkey = hotkey; onSave(); Toast.show("剪贴板快捷键已更新：\(hotkey.displayText)") }
+        actionHotkey.onChange = { hotkey in settings.actionHotkey = hotkey; onSave(); Toast.show("动作快捷键已更新：\(hotkey.displayText)", tone: .success) }
+        panelHotkey.onChange = { hotkey in settings.panelHotkey = hotkey; onSave(); Toast.show("主页快捷键已更新：\(hotkey.displayText)", tone: .success) }
+        clipboardDockHotkey.onChange = { hotkey in settings.clipboardDockHotkey = hotkey; onSave(); Toast.show("剪贴板快捷键已更新：\(hotkey.displayText)", tone: .success) }
 
         // 录制期挂起全局热键 + 与另外两个动作的冲突检测。
         for recorder in [actionHotkey, panelHotkey, clipboardDockHotkey] {
@@ -839,7 +839,7 @@ final class TriggerSectionView: NSView {
         settings.middleClickEnabled = mouseSwitch.isOn
         onSave()
         refreshPermissionStatus()
-        Toast.show(settings.middleClickEnabled ? "已启用鼠标中键触发" : "已关闭鼠标中键触发")
+        Toast.show(settings.middleClickEnabled ? "已启用鼠标中键触发" : "已关闭鼠标中键触发", tone: .success)
     }
 
     @objc private func requestAccessibility() {
@@ -923,7 +923,7 @@ final class FeaturesSectionView: NSView {
             self.settings.translationEngine = engine
             self.rebuildKeyRow()
             self.onSave()
-            Toast.show("已切换到\(engine.toggleTitle)")
+            Toast.show("已切换到\(engine.toggleTitle)", tone: .success)
         }
         enginePicker.translatesAutoresizingMaskIntoConstraints = false
         enginePicker.heightAnchor.constraint(equalToConstant: 40).isActive = true
@@ -984,7 +984,7 @@ final class FeaturesSectionView: NSView {
     @objc private func toggleClipboard() {
         settings.clipboardHistoryEnabled = clipboardSwitch.isOn
         onSave()
-        Toast.show(settings.clipboardHistoryEnabled ? "已启用剪贴板历史" : "已关闭剪贴板历史")
+        Toast.show(settings.clipboardHistoryEnabled ? "已启用剪贴板历史" : "已关闭剪贴板历史", tone: .success)
     }
 
     @objc private func save() {
@@ -994,7 +994,7 @@ final class FeaturesSectionView: NSView {
         enginePicker.reload()
         refreshKeyWarning()
         onSave()
-        Toast.show("设置已保存")
+        Toast.show("设置已保存", tone: .success)
     }
 }
 
@@ -1190,7 +1190,7 @@ final class AppearanceSectionView: NSView {
         colorWell.color = settings.accentColor
         onAccentChanged()
         refreshSelection()
-        Toast.show("主题色已更新")
+        Toast.show("主题色已更新", tone: .success)
     }
 
     @objc private func pickCustom() {

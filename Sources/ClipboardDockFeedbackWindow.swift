@@ -1,31 +1,11 @@
 import AppKit
 
-enum ClipboardDockFeedbackTone {
-    case success
-    case info
-    case destructive
-
-    var color: NSColor {
-        switch self {
-        case .success: return .systemGreen
-        case .info: return .systemBlue
-        case .destructive: return .systemRed
-        }
-    }
-
-    var symbolName: String {
-        switch self {
-        case .success: return "checkmark.circle.fill"
-        case .info: return "info.circle.fill"
-        case .destructive: return "trash.circle.fill"
-        }
-    }
-}
+// 语气/颜色/图标统一走 Design.swift 的 FeedbackTone（与主 Toast 同一真相源）。
 
 final class ClipboardDockFeedbackWindow: NSPanel {
     static let toastHeight: CGFloat = 40
 
-    init(message: String, tone: ClipboardDockFeedbackTone) {
+    init(message: String, tone: FeedbackTone) {
         let width = ClipboardDockFeedbackView.preferredWidth(for: message)
         super.init(
             contentRect: CGRect(x: 0, y: 0, width: width, height: Self.toastHeight),
@@ -56,7 +36,7 @@ final class ClipboardDockFeedbackView: NSView {
         return min(max(textWidth + 58, 150), 320)
     }
 
-    init(message: String, tone: ClipboardDockFeedbackTone, frame: NSRect) {
+    init(message: String, tone: FeedbackTone, frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
 
@@ -103,7 +83,7 @@ enum ClipboardDockFeedback {
     private static let pileOffset: CGFloat = 9      // 每层小偏移，堆成一叠而非铺开
     private static let lifetime: TimeInterval = 1.6
 
-    static func show(message: String, tone: ClipboardDockFeedbackTone, anchor: CGPoint) {
+    static func show(message: String, tone: FeedbackTone, anchor: CGPoint) {
         if stack.isEmpty { baseAnchor = anchor }
         let window = ClipboardDockFeedbackWindow(message: message, tone: tone)
         window.alphaValue = 0

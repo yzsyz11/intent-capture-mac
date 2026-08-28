@@ -397,7 +397,7 @@ final class ClipboardHistoryStore {
             try data.write(to: indexURL, options: .atomic)
         } catch {
             DispatchQueue.main.async {
-                Toast.show("剪贴板历史保存失败：\(error.localizedDescription)")
+                Toast.show("剪贴板历史保存失败：\(error.localizedDescription)", tone: .danger)
             }
         }
     }
@@ -410,7 +410,7 @@ final class ClipboardHistoryStore {
                 try data.write(to: self.imagesDirectory.appendingPathComponent(filename))
             } catch {
                 DispatchQueue.main.async {
-                    Toast.show("截图写入失败：\(error.localizedDescription)")
+                    Toast.show("截图写入失败：\(error.localizedDescription)", tone: .danger)
                 }
             }
         }

@@ -546,7 +546,7 @@ final class ClipboardDockView: NSView, NSSearchFieldDelegate {
         selectionState.cancel()
         updateDeletionControls()
         store.delete(ids: ids)
-        ClipboardDockFeedback.show(message: "已删除 · \(count) 项", tone: .destructive, anchor: anchor)
+        ClipboardDockFeedback.show(message: "已删除 · \(count) 项", tone: .delete, anchor: anchor)
     }
 
     private func toggleDeletionSelection(id: String) {
@@ -1011,7 +1011,7 @@ final class ClipboardCardView: NSView {
         CATransaction.setCompletionBlock { [weak self] in
             guard let self else { return }
             self.store.delete(self.item)   // reload 会重建卡片
-            ClipboardDockFeedback.show(message: "已删除 · \(self.item.kind.categoryTitle)", tone: .destructive, anchor: anchor)
+            ClipboardDockFeedback.show(message: "已删除 · \(self.item.kind.categoryTitle)", tone: .delete, anchor: anchor)
         }
         layer.transform = CATransform3DMakeTranslation(0, -bounds.height, 0)   // 向上飞出
         layer.opacity = 0
@@ -1239,7 +1239,7 @@ final class ClipboardCardView: NSView {
 
     @objc private func deleteItem() {
         store.delete(item)
-        ClipboardDockFeedback.show(message: "已删除 · 1 项", tone: .destructive, anchor: feedbackAnchor)
+        ClipboardDockFeedback.show(message: "已删除 · 1 项", tone: .delete, anchor: feedbackAnchor)
     }
 }
 

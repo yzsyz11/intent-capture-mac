@@ -204,7 +204,7 @@ final class OnboardingContentView: NSView {
     private func initiate(_ kind: PermissionKind) {
         let state = PermissionEvaluator.state(of: kind)
         guard state != .granted else { return }
-        Toast.show("请在系统设置中允许\(kind.displayName)，向导会等待并自动打勾。")
+        Toast.show("请在系统设置中允许\(kind.displayName)，向导会等待并自动打勾。", tone: .warning)
         PermissionHealer.heal(kind, state: state)
         // 进入等待态：转圈直到 watcher 侦测到授权成功再翻绿。
         rows.first { $0.kind == kind }?.showPending()

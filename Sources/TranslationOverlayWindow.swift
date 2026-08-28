@@ -153,7 +153,7 @@ final class TranslationOverlayView: NSView {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         onClose?()
-        Toast.show("译文已复制")
+        Toast.show("译文已复制", tone: .success)
     }
 
     @objc private func closeTapped() { onClose?() }

@@ -177,7 +177,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             onClipboard: { [weak self] in self?.toggleClipboardDock() }
         )
         if !registered {
-            Toast.show("快捷键注册失败，可能被其他应用占用。请到设置里更换快捷键。")
+            Toast.show("快捷键注册失败，可能被其他应用占用。请到设置里更换快捷键。", tone: .danger)
         }
     }
 
@@ -205,7 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 ? "中键监听：启动失败"
                 : "中键监听：未授权"
             setupStatusItem()
-            Toast.show("中键监听不可用。请移除系统设置里的旧 IntentCapture 条目，重新添加 /Applications/IntentCapture.app，并重启 App。")
+            Toast.show("中键监听不可用。请移除系统设置里的旧 IntentCapture 条目，重新添加 /Applications/IntentCapture.app，并重启 App。", tone: .danger)
         }
     }
 
@@ -270,7 +270,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleClipboardDock() {
         guard settings.clipboardHistoryEnabled else {
-            Toast.show("剪贴板拓展坞已关闭，请在功能里开启")
+            Toast.show("剪贴板拓展坞已关闭，请在功能里开启", tone: .warning)
             return
         }
         if clipboardDock == nil {
@@ -329,7 +329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         Toast.show(state == .stale
             ? "检测到旧授权失效，正在清理并重新申请\(kind.displayName)…"
-            : "正在申请\(kind.displayName)权限，请在系统设置中允许…")
+            : "正在申请\(kind.displayName)权限，请在系统设置中允许…", tone: .info)
         PermissionHealer.heal(kind, state: state)
         watchUntilGranted(kind)
     }
@@ -360,7 +360,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             settings.middleClickEnabled = true
             startMouseMonitor()
             if middleClickStatus == "中键监听：运行中" {
-                if !fromWizard { Toast.show("中键权限已开启") }
+                if !fromWizard { Toast.show("中键权限已开启", tone: .success) }
             } else {
                 promptRestart(message: "中键权限已授权", info: "重启 Intent Capture 后中键监听即生效。")
             }
