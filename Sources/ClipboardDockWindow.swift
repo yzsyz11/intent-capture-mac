@@ -1,5 +1,6 @@
 import AppKit
 import Carbon
+import ApplicationServices
 
 final class ClipboardDockWindow: NSPanel {
     private let store: ClipboardHistoryStore
@@ -8,6 +9,13 @@ final class ClipboardDockWindow: NSPanel {
     private var localMouseMonitor: Any?
     private var editorPanel: ClipboardDockEditorPanel?
     var onOpenSettings: (() -> Void)?
+    /// 呼出 Dock 前的前台 App，用于「点击条目回填到输入框」。
+    private var previousApp: NSRunningApplication?
+    /// 中键按下瞬间（环形菜单出现之前）记录的前台 App。环形菜单路径下，呼出 Dock 时本 App 可能已在前台，
+    /// 此时用这个更早、更可靠的记录。由 MouseEventMonitor 在中键按下时写入。
+    static var lastForegroundApp: NSRunningApplication?
+    /// 仅在「真·选中条目」时置真，避免点外部关闭也触发回填。
+    var pasteRequested = false
 
     init(store: ClipboardHistoryStore) {
         self.store = store
@@ -39,6 +47,17 @@ final class ClipboardDockWindow: NSPanel {
     }
 
     func showDock() {
+        // 选定"上一个 App"：
+        // - 全局快捷键路径：本 App 未激活，frontmostApplication 就是目标 App。
+        // - 中键环形菜单路径：呼出时本 App 可能已在前台，改用中键按下瞬间记录的 lastForegroundApp。
+        let selfPID = ProcessInfo.processInfo.processIdentifier
+        let front = NSWorkspace.shared.frontmostApplication
+        if let front, front.processIdentifier != selfPID {
+            previousApp = front
+        } else {
+            previousApp = Self.lastForegroundApp
+        }
+        pasteRequested = false
         positionAboveDock()
         dockView.resetKeyboardFocus()
         dockView.reload()
@@ -69,6 +88,69 @@ final class ClipboardDockWindow: NSPanel {
         closeEditor()
         stopDismissMonitors()
         orderOut(nil)
+        if pasteRequested {
+            pasteRequested = false
+            pasteIntoPreviousAppIfEnabled()
+        }
+    }
+
+    /// 选中条目后：若前台 App 当前聚焦的是可编辑输入框，直接合成 ⌘V 填入；否则维持「仅复制」。
+    private func pasteIntoPreviousAppIfEnabled() {
+        guard AppSettings.shared.clipboardPasteIntoField else { return }
+        guard let app = previousApp,
+              app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+        // 关键：先把原前台 App 重新激活拿回焦点，等焦点稳定后再判定 + 合成粘贴。
+        // 否则 Dock 刚收起时焦点元素可能读到空，被误判为「非输入框」而降级只复制。
+        app.activate(options: [.activateIgnoringOtherApps])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            guard Self.focusedElementIsEditable(pid: app.processIdentifier) else { return }
+            Self.synthesizePaste()
+        }
+    }
+
+    /// 用辅助功能读目标 App 的焦点元素，判断是否可编辑文本（读不到即视为不可编辑，安全降级为仅复制）。
+    private static func focusedElementIsEditable(pid: pid_t) -> Bool {
+        let appElement = AXUIElementCreateApplication(pid)
+        // Electron/Chromium 类应用默认不暴露网页 AX 树，先请求开启，让 contenteditable 输入框可被读到。
+        AXUIElementSetAttributeValue(appElement, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+
+        var focused: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appElement, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
+              let focusedElement = focused else { return false }
+        let element = focusedElement as! AXUIElement
+
+        var roleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXRoleAttribute as CFString, &roleRef)
+        let role = (roleRef as? String) ?? "nil"
+        var subroleRef: CFTypeRef?
+        AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subroleRef)
+        let subrole = (subroleRef as? String) ?? "nil"
+
+        let textRoles: Set<String> = [
+            kAXTextFieldRole as String, kAXTextAreaRole as String,
+            kAXComboBoxRole as String, "AXSearchField"
+        ]
+        let textSubroles: Set<String> = ["AXSecureTextField", "AXSearchField"]
+
+        var settable: DarwinBoolean = false
+        AXUIElementIsAttributeSettable(element, kAXValueAttribute as CFString, &settable)
+        // 文本类元素普遍支持"选中范围"属性——用它兜底覆盖 contenteditable 等未报标准 role 的输入框。
+        var selRange: CFTypeRef?
+        let hasSelection = AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &selRange) == .success
+
+        return textRoles.contains(role) || textSubroles.contains(subrole) || settable.boolValue || hasSelection
+    }
+
+    /// 合成一次 ⌘V，投递到系统会话事件流（前台 App 接收）。
+    private static func synthesizePaste() {
+        let source = CGEventSource(stateID: .combinedSessionState)
+        let vKey = CGKeyCode(kVK_ANSI_V)
+        let down = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true)
+        down?.flags = .maskCommand
+        let up = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false)
+        up?.flags = .maskCommand
+        down?.post(tap: .cgSessionEventTap)
+        up?.post(tap: .cgSessionEventTap)
     }
 
     override func keyDown(with event: NSEvent) {
@@ -1050,6 +1132,7 @@ final class ClipboardCardView: NSView {
         guard !isCopying else { return }
         isCopying = true
         store.restore(item)   // 复制是瞬时的；下面的转圈→对号仅作反馈动效。
+        dockWindow?.pasteRequested = true   // 标记为「真·选中」，Dock 收起后按需回填输入框。
         playCardCopySuccess()
     }
 

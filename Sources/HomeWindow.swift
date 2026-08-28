@@ -883,6 +883,7 @@ final class TriggerSectionView: NSView {
 
 final class FeaturesSectionView: NSView {
     private let clipboardSwitch = GlassSwitch(frame: .zero)
+    private let pasteSwitch = GlassSwitch(frame: .zero)
     private let enginePicker = EnginePicker(frame: .zero)
     private let targetLanguage = NSPopUpButton()
     private let apiKey = SecretKeyField(frame: .zero)
@@ -914,6 +915,10 @@ final class FeaturesSectionView: NSView {
         let clipTile = IconTile(symbol: "clipboard", tint: .white, fill: NSColor(srgbRed: 0.29, green: 0.55, blue: 0.95, alpha: 1), size: 28)
         let clipCard = SettingsCard()
         clipCard.addRow(SettingRow.make(title: "剪贴板拓展坞", control: clipboardSwitch, leading: clipTile, subtitle: "快速查看并复用最近内容"))
+        pasteSwitch.setOn(settings.clipboardPasteIntoField, animated: false)
+        pasteSwitch.target = self
+        pasteSwitch.action = #selector(togglePasteIntoField)
+        clipCard.addRow(SettingRow.make(title: "点击直接填入输入框", control: pasteSwitch, subtitle: "聚焦输入框时填入，否则仅复制"))
         addGroup(col, header: "剪贴板", card: clipCard)
 
         // 区域翻译
@@ -985,6 +990,12 @@ final class FeaturesSectionView: NSView {
         settings.clipboardHistoryEnabled = clipboardSwitch.isOn
         onSave()
         Toast.show(settings.clipboardHistoryEnabled ? "已启用剪贴板历史" : "已关闭剪贴板历史", tone: .success)
+    }
+
+    @objc private func togglePasteIntoField() {
+        settings.clipboardPasteIntoField = pasteSwitch.isOn
+        onSave()
+        Toast.show(settings.clipboardPasteIntoField ? "点击将填入输入框" : "点击仅复制", tone: .success)
     }
 
     @objc private func save() {

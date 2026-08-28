@@ -170,6 +170,11 @@ final class MouseEventMonitor {
     private func dispatchDown() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
+            // 环形菜单/Dock 出现之前，先记住此刻的前台 App（用于剪贴板点击回填输入框）。
+            if let front = NSWorkspace.shared.frontmostApplication,
+               front.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+                ClipboardDockWindow.lastForegroundApp = front
+            }
             self.isMiddleDown = true
             self.menuOpen = false
             let anchor = NSEvent.mouseLocation

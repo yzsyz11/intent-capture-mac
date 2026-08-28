@@ -73,6 +73,17 @@ final class AppSettings {
         set { defaults.set(newValue, forKey: "clipboardHistoryEnabled") }
     }
 
+    /// 点击剪贴板条目：聚焦到可编辑输入框时直接填入（合成 ⌘V），否则仅复制。默认开。
+    var clipboardPasteIntoField: Bool {
+        get {
+            if defaults.object(forKey: "clipboardPasteIntoField") == nil {
+                return true
+            }
+            return defaults.bool(forKey: "clipboardPasteIntoField")
+        }
+        set { defaults.set(newValue, forKey: "clipboardPasteIntoField") }
+    }
+
     /// 是否已完成首次启动引导；首启弹主页引导，之后常驻菜单栏静默，不再主动弹窗。
     var hasLaunchedBefore: Bool {
         get { defaults.bool(forKey: "hasLaunchedBefore") }
