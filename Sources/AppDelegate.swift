@@ -300,6 +300,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.setupStatusItem()
             }, onHeal: { [weak self] kind in
                 self?.healPermission(kind)
+            }, onHotkeyRecording: { [weak self] recording in
+                self?.hotkeys.setSuppressed(recording)
             })
             homeWindow = window
         }

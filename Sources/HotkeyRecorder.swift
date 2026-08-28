@@ -166,8 +166,13 @@ final class HotkeyRecorderButton: NSButton {
         didSet { refreshTitle() }
     }
     var onChange: ((HotkeyDefinition) -> Void)?
+    /// 录制开始/结束回调：宿主据此挂起/恢复全局热键。
+    var onRecordingChanged: ((Bool) -> Void)?
+    /// 返回与候选键冲突的动作名（如「主页」），无冲突返回 nil。
+    var conflictProbe: ((HotkeyDefinition) -> String?)?
 
     private var recording = false
+    private var pending: HotkeyDefinition?
 
     init(hotkey: HotkeyDefinition) {
         self.hotkey = hotkey
@@ -185,9 +190,20 @@ final class HotkeyRecorderButton: NSButton {
     override var acceptsFirstResponder: Bool { true }
 
     @objc private func startRecording() {
+        guard !recording else { return }
         recording = true
-        title = "按下新的组合键..."
+        pending = nil
+        title = "按下新的组合键…"
+        onRecordingChanged?(true)
         window?.makeFirstResponder(self)
+    }
+
+    // Command/Control 开头的组合键（如 ⌘D）由 AppKit 当作 key equivalent 分发，不会走 keyDown；
+    // 录制期必须在这里拦截，否则组合键漏给全局快捷键触发，录制框收不到。
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard recording else { return super.performKeyEquivalent(with: event) }
+        handleRecordingKey(event)
+        return true
     }
 
     override func keyDown(with event: NSEvent) {
@@ -195,28 +211,67 @@ final class HotkeyRecorderButton: NSButton {
             super.keyDown(with: event)
             return
         }
+        handleRecordingKey(event)
+    }
 
-        if event.keyCode == UInt16(kVK_Escape) {
-            recording = false
-            refreshTitle()
+    private func handleRecordingKey(_ event: NSEvent) {
+        let code = Int(event.keyCode)
+
+        // Esc：放弃录制，恢复原值。
+        if code == kVK_Escape {
+            endRecording()
             return
         }
 
+        // 回车：确认待定组合键（先做冲突检测）。
+        if code == kVK_Return || code == kVK_ANSI_KeypadEnter {
+            guard let candidate = pending else { NSSound.beep(); return }
+            if let conflict = conflictProbe?(candidate) {
+                NSSound.beep()
+                title = "\(candidate.displayText) · 与「\(conflict)」冲突"
+                return
+            }
+            commit(candidate)
+            return
+        }
+
+        // 其它按键：作为候选组合键，进入待确认态。
         guard let next = HotkeyDefinition(event: event) else {
             NSSound.beep()
             title = "需要包含 ⌃/⌥/⇧/⌘"
             return
         }
+        pending = next
+        title = "\(next.displayText)   ⏎ 确认 · Esc 重来"
+    }
 
+    /// 确认提交：先恢复全局热键，再持久化（onChange 内会整体重注册）。
+    private func commit(_ newValue: HotkeyDefinition) {
         recording = false
-        hotkey = next
-        onChange?(next)
+        pending = nil
+        hotkey = newValue
         window?.makeFirstResponder(nil)
+        onRecordingChanged?(false)
+        onChange?(newValue)
+    }
+
+    /// 放弃/失焦：不改值，恢复标题与全局热键。
+    private func endRecording() {
+        guard recording else { return }
+        recording = false
+        pending = nil
+        refreshTitle()
+        window?.makeFirstResponder(nil)
+        onRecordingChanged?(false)
     }
 
     override func resignFirstResponder() -> Bool {
-        recording = false
-        refreshTitle()
+        if recording {
+            recording = false
+            pending = nil
+            refreshTitle()
+            onRecordingChanged?(false)
+        }
         return super.resignFirstResponder()
     }
 

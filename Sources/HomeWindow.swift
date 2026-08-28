@@ -33,12 +33,13 @@ enum HomeSection: CaseIterable {
 final class HomeWindow: NSWindow {
     private let homeView: HomeWindowView
 
-    init(onSelectAction: @escaping (CaptureAction) -> Void, onSettingsSaved: @escaping () -> Void, onHeal: @escaping (PermissionKind) -> Void) {
+    init(onSelectAction: @escaping (CaptureAction) -> Void, onSettingsSaved: @escaping () -> Void, onHeal: @escaping (PermissionKind) -> Void, onHotkeyRecording: @escaping (Bool) -> Void) {
         homeView = HomeWindowView(
             settings: AppSettings.shared,
             onSelectAction: onSelectAction,
             onSettingsSaved: onSettingsSaved,
-            onHeal: onHeal
+            onHeal: onHeal,
+            onHotkeyRecording: onHotkeyRecording
         )
         super.init(
             contentRect: CGRect(x: 0, y: 0, width: Design.Layout.windowWidth, height: Design.Layout.windowHeight),
@@ -84,11 +85,11 @@ final class HomeWindowView: NSView {
 
     override var isFlipped: Bool { true }
 
-    init(settings: AppSettings, onSelectAction: @escaping (CaptureAction) -> Void, onSettingsSaved: @escaping () -> Void, onHeal: @escaping (PermissionKind) -> Void) {
+    init(settings: AppSettings, onSelectAction: @escaping (CaptureAction) -> Void, onSettingsSaved: @escaping () -> Void, onHeal: @escaping (PermissionKind) -> Void, onHotkeyRecording: @escaping (Bool) -> Void) {
         self.onSelectAction = onSelectAction
         dashboard = DashboardSectionView(settings: settings)
         savingSection = SavingSectionView(settings: settings, onSave: onSettingsSaved)
-        triggerSection = TriggerSectionView(settings: settings, onSave: onSettingsSaved, onHeal: onHeal)
+        triggerSection = TriggerSectionView(settings: settings, onSave: onSettingsSaved, onHeal: onHeal, onHotkeyRecording: onHotkeyRecording)
         featuresSection = FeaturesSectionView(settings: settings, onSave: onSettingsSaved)
         appearanceSection = AppearanceSectionView(settings: settings)
         super.init(frame: CGRect(x: 0, y: 0, width: Design.Layout.windowWidth, height: Design.Layout.windowHeight))
@@ -755,7 +756,7 @@ final class TriggerSectionView: NSView {
 
     override var isFlipped: Bool { true }
 
-    init(settings: AppSettings, onSave: @escaping () -> Void, onHeal: @escaping (PermissionKind) -> Void) {
+    init(settings: AppSettings, onSave: @escaping () -> Void, onHeal: @escaping (PermissionKind) -> Void, onHotkeyRecording: @escaping (Bool) -> Void) {
         self.settings = settings
         self.onSave = onSave
         self.onHeal = onHeal
@@ -808,10 +809,31 @@ final class TriggerSectionView: NSView {
         panelHotkey.onChange = { hotkey in settings.panelHotkey = hotkey; onSave(); Toast.show("主页快捷键已更新：\(hotkey.displayText)") }
         clipboardDockHotkey.onChange = { hotkey in settings.clipboardDockHotkey = hotkey; onSave(); Toast.show("剪贴板快捷键已更新：\(hotkey.displayText)") }
 
+        // 录制期挂起全局热键 + 与另外两个动作的冲突检测。
+        for recorder in [actionHotkey, panelHotkey, clipboardDockHotkey] {
+            recorder.onRecordingChanged = onHotkeyRecording
+        }
+        actionHotkey.conflictProbe = { [weak self] in self?.conflict(of: $0, excluding: .action) }
+        panelHotkey.conflictProbe = { [weak self] in self?.conflict(of: $0, excluding: .panel) }
+        clipboardDockHotkey.conflictProbe = { [weak self] in self?.conflict(of: $0, excluding: .clipboard) }
+
         refreshPermissionStatus()
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    private enum HotkeySlot { case action, panel, clipboard }
+
+    /// 候选键与另外两个动作当前绑定冲突时，返回那个动作名；否则 nil。
+    private func conflict(of candidate: HotkeyDefinition, excluding slot: HotkeySlot) -> String? {
+        func same(_ a: HotkeyDefinition, _ b: HotkeyDefinition) -> Bool {
+            a.keyCode == b.keyCode && a.modifiers == b.modifiers
+        }
+        if slot != .action, same(candidate, settings.actionHotkey) { return "默认动作" }
+        if slot != .panel, same(candidate, settings.panelHotkey) { return "主页" }
+        if slot != .clipboard, same(candidate, settings.clipboardDockHotkey) { return "剪贴板" }
+        return nil
+    }
 
     @objc private func toggleMouse() {
         settings.middleClickEnabled = mouseSwitch.isOn
