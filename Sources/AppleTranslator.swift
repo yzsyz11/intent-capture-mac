@@ -15,7 +15,7 @@ final class AppleTranslator: Translator {
         let language = Self.language(for: target)
         TranslationDebugLog.log("Apple 翻译 target=\(target) 行数=\(lines.count)")
         let result = try await AppleTranslationBridge.shared.translate(lines, target: language)
-        TranslationDebugLog.log("Apple 返回 \(result.count) 行: \(result)")
+        TranslationDebugLog.log("Apple 返回 \(result.count) 行")
         return result
     }
 

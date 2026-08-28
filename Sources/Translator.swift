@@ -76,6 +76,7 @@ enum TranslationError: LocalizedError {
 // MARK: - 调试日志
 
 /// 翻译调试日志：开关开启时把消息写进 `~/Library/Logs/IntentCapture/translation.log` 并 NSLog。
+/// 脱敏原则：只记 target / 行数 / 字符数 / HTTP 状态，绝不写入原文、译文或 API Key。
 enum TranslationDebugLog {
     static var isEnabled: Bool { AppSettings.shared.translationDebugLogEnabled }
 
@@ -153,7 +154,7 @@ final class DeepSeekTranslator: Translator {
             ]
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        TranslationDebugLog.log("DeepSeek 请求 target=\(target) 行数=\(lines.count) 原文=\(payloadLines)")
+        TranslationDebugLog.log("DeepSeek 请求 target=\(target) 行数=\(lines.count) 原文字符数=\(lines.reduce(0) { $0 + $1.count })")
 
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse else {
@@ -166,9 +167,9 @@ final class DeepSeekTranslator: Translator {
         }
 
         let content = try Self.extractContent(from: data)
-        TranslationDebugLog.log("DeepSeek 原始返回: \(content)")
+        TranslationDebugLog.log("DeepSeek 原始返回 \(content.count) 字符")
         let result = Self.parseLines(from: content, expected: lines.count)
-        TranslationDebugLog.log("DeepSeek 解析后 \(result.count) 行: \(result)")
+        TranslationDebugLog.log("DeepSeek 解析后 \(result.count) 行")
         return result
     }
 
